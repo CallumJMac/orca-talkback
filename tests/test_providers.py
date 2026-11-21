@@ -48,7 +48,8 @@ def test_anthropic_rewriter_streams_text_from_haiku_by_default():
     rewrite = anthropic_rewriter(client)
     assert list(rewrite("the prompt")) == ["Fixed the form. ", "Want a PR?"]
     request = client.requests[0]
-    assert request["model"] == ANTHROPIC_DEFAULT_MODEL == "claude-haiku-4-5"
+    assert request["model"] == ANTHROPIC_DEFAULT_MODEL == "claude-haiku-5-5"
+    assert "temperature" not in request  # Haiku 5.5 rejects sampling parameters
     assert request["messages"] == [{"role": "user", "content": "the prompt"}]
     assert request["max_tokens"] == 200
 
@@ -71,7 +72,8 @@ def test_bedrock_rewriter_yields_only_text_deltas():
     rewrite = bedrock_rewriter(client)
     assert list(rewrite("the prompt")) == ["Fixed the form. ", "Want a PR?"]
     request = client.requests[0]
-    assert request["modelId"] == BEDROCK_DEFAULT_MODEL
+    assert request["modelId"] == BEDROCK_DEFAULT_MODEL == "us.anthropic.claude-haiku-5-5"
+    assert "temperature" not in request["inferenceConfig"]
     assert request["messages"][0]["content"][0]["text"] == "the prompt"
 
 

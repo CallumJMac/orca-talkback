@@ -82,7 +82,7 @@ Replies that finished while their workspace was not focused are not stored and a
 
 ## Spoken text
 
-- **Rewrite:** Claude Haiku 4.5 (Anthropic API by default, or Bedrock) turns the reply into one to three conversational sentences: no markdown, code, paths, URLs or dashes.
+- **Rewrite:** Claude Haiku 5.5 (Anthropic API by default, or Bedrock) turns the reply into one to three conversational sentences: no markdown, code, paths, URLs or dashes.
 - **Streaming:** the Bedrock streaming response is split into sentences, so synthesis of the first sentence starts before the rewrite finishes.
 - **Fallback:** if Bedrock fails, the reply is stripped of code blocks, tables, links and markdown and cut to 600 characters at a sentence boundary.
 - **Voice:** `bf_emma` at speed 1.1 by default, overridable with `--voice` and `--speed`.

@@ -5,11 +5,10 @@ from typing import Any
 
 from orca_talkback.spoken import Rewriter
 
-ANTHROPIC_DEFAULT_MODEL = "claude-haiku-4-5"
-BEDROCK_DEFAULT_MODEL = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+ANTHROPIC_DEFAULT_MODEL = "claude-haiku-5-5"
+BEDROCK_DEFAULT_MODEL = "us.anthropic.claude-haiku-5-5"
 REWRITE_TIMEOUT_SECONDS = 3.0
 REWRITE_MAX_TOKENS = 200
-REWRITE_TEMPERATURE = 0.3
 
 
 def make_anthropic_client() -> Any:
@@ -26,7 +25,6 @@ def anthropic_rewriter(client: Any, model: str = ANTHROPIC_DEFAULT_MODEL) -> Rew
         with client.messages.stream(
             model=model,
             max_tokens=REWRITE_MAX_TOKENS,
-            temperature=REWRITE_TEMPERATURE,
             messages=[{"role": "user", "content": prompt}],
         ) as stream:
             yield from stream.text_stream
@@ -55,7 +53,7 @@ def bedrock_rewriter(client: Any, model: str = BEDROCK_DEFAULT_MODEL) -> Rewrite
         response = client.converse_stream(
             modelId=model,
             messages=[{"role": "user", "content": [{"text": prompt}]}],
-            inferenceConfig={"maxTokens": REWRITE_MAX_TOKENS, "temperature": REWRITE_TEMPERATURE},
+            inferenceConfig={"maxTokens": REWRITE_MAX_TOKENS},
         )
         for event in response["stream"]:
             fragment = event.get("contentBlockDelta", {}).get("delta", {}).get("text", "")

@@ -39,7 +39,7 @@
 When an agent in the workspace you are looking at finishes a turn, orca-talkback:
 
 1. reads the agent's full reply,
-2. has Claude Haiku rewrite it as one to three sentences a colleague would actually say out loud (no code, no paths, no markdown),
+2. has Claude Haiku 5.5 rewrite it as one to three sentences a colleague would actually say out loud (no code, no paths, no markdown),
 3. speaks it with [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M), locally, starting on the first sentence while the rest is still being written.
 
 Start talking and it stops. Switch workspace and it stops. Send a new prompt and it stops.
@@ -187,7 +187,7 @@ uv run orca-talkback --help
 | Flag | Default | What it does |
 |---|---|---|
 | `--provider` | `anthropic` | Who rewrites replies into speech: `anthropic`, `bedrock`, or `none` (speak cleaned-up text) |
-| `--model` | `claude-haiku-4-5` | Rewrite model. On Bedrock the default is `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
+| `--model` | `claude-haiku-5-5` | Rewrite model. On Bedrock the default is `us.anthropic.claude-haiku-5-5` |
 | `--aws-profile` | `$AWS_PROFILE` | AWS profile for `--provider bedrock` |
 | `--aws-region` | `$AWS_REGION` or `us-east-1` | AWS region for `--provider bedrock` |
 | `--voice` | `bf_emma` | Kokoro voice. Try `af_heart`, `af_bella`, `bm_george` |
@@ -207,7 +207,7 @@ uv run orca-talkback --help
 | **Amazon Bedrock** | AWS credentials with Bedrock model access | `uv run orca-talkback --provider bedrock --aws-profile my-profile` |
 | **None** | nothing | `uv run orca-talkback --provider none` |
 
-Each rewrite is a single short Haiku call (about 200 output tokens) with a 3 s timeout and no retries. If it fails, orca-talkback speaks a cleaned-up version of the reply instead, so you always hear something.
+Each rewrite is a single short Claude Haiku 5.5 call (under 100 output tokens in practice, capped at 200) with a 3 s timeout and no retries, so it costs a small fraction of a cent. If it fails, orca-talkback speaks a cleaned-up version of the reply instead, so you always hear something.
 
 ---
 
