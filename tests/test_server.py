@@ -25,7 +25,7 @@ class FakeSpeaker:
         self.stops.append(reason)
 
 
-def make_daemon(messages: dict[str, str] | None = None, lookup_message=None):
+def make_daemon(messages: dict[str, str] | None = None, lookup_message=None, verbose: bool = False):
     speaker = FakeSpeaker()
     log_lines: list[str] = []
     daemon = VoiceDaemon(
@@ -33,6 +33,7 @@ def make_daemon(messages: dict[str, str] | None = None, lookup_message=None):
         lookup_message=lookup_message or (lambda pane_key: (messages or {}).get(pane_key, "")),
         to_sentences=lambda reply: [f"spoken: {reply}"],
         log=log_lines.append,
+        verbose=verbose,
     )
     daemon.log_lines = log_lines
     return daemon, speaker
@@ -216,3 +217,22 @@ def test_http_json_content_type_with_charset_is_accepted(server_url):
     )
     with urllib.request.urlopen(request, timeout=5) as response:
         assert response.status == 200
+
+
+def test_verbose_logs_every_event_even_without_an_action():
+    daemon, _ = make_daemon(verbose=True)
+    daemon.handle_focus(focus_payload(FOCUSED))
+    daemon.handle_status(status_payload("workspace-other", "pane-b", "working"))
+    daemon.handle_status(status_payload("workspace-other", "pane-b", "done"))
+    events = [line for line in daemon.log_lines if line.startswith("[event]")]
+    assert events == [
+        "[event] focus workspace=workspace-focused name='Demo'",
+        "[event] status pane=pane-b state=working workspace=workspace-other focused=workspace-focused",
+        "[event] status pane=pane-b state=done workspace=workspace-other focused=workspace-focused",
+    ]
+
+
+def test_quiet_by_default():
+    daemon, _ = make_daemon()
+    daemon.handle_status(status_payload("workspace-other", "pane-b", "working"))
+    assert not [line for line in daemon.log_lines if line.startswith("[event]")]

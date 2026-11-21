@@ -137,8 +137,9 @@ Orca reports focus per workspace, and repeats `working` events throughout a turn
 | Event | Action |
 |---|---|
 | An agent in the **focused** workspace finishes | Speak its reply |
-| An agent in **another** workspace finishes | Nothing, and it is never replayed later |
-| An agent in the focused workspace starts working | Stop |
+| The agent **you last sent a prompt to** finishes, wherever it lives | Speak its reply (so a chat on screen speaks even when Orca reports another workspace as focused) |
+| Any other agent finishes | Nothing, and it is never replayed later |
+| You send a prompt, or an agent in the focused workspace starts working | Stop |
 | You switch workspace | Stop |
 | You start talking | Stop |
 
@@ -164,6 +165,7 @@ uv run orca-talkback --help
 | `--barge-in-ms` | `160` | Continuous speech needed to interrupt. Raise it if it stops too easily |
 | `--vad-threshold` | `0.8` | Speech probability threshold. Lower it if it never stops |
 | `--input-device` | system input | Microphone for barge-in, matched by name, for example `"MacBook Pro Microphone"` |
+| `--verbose` | off | Log every event the plugin forwards, with the focused workspace, for troubleshooting |
 | `--port` | `47823` | Leave as is: the plugin hard-codes this port (`DAEMON_URL` in `orca-plugin/talkback/src/worker.ts`) |
 
 **Using Amazon Bedrock instead of an API key:**
@@ -192,7 +194,7 @@ Each rewrite is one short call (capped at 200 output tokens) with a 3 s timeout 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Nothing is ever spoken | Daemon not running, or plugin not installed | `curl -s 127.0.0.1:47823/health`; `orca plugin list` should show `talkback` running |
-| One agent never speaks | Its workspace was not focused when it finished | By design. Switch to it before it finishes |
+| One agent never speaks | It was neither in the focused workspace nor the agent you last prompted | By design. Run with `--verbose` to see every event and which workspace Orca reports as focused |
 | It reads out markdown-ish text | The rewrite failed, so it fell back to plain text | Look for `[spoken] rewrite failed` in the daemon log; check your API key or AWS profile |
 | Talking over it never stops it | The system input is a virtual device (Zoom, BlackHole), permission was denied, or the threshold is too strict | Check the `[audio] barge-in microphone:` line at startup and pass `--input-device "MacBook Pro Microphone"`; allow your terminal under System Settings, Privacy & Security, Microphone; try `--vad-threshold 0.6` |
 | It stops on its own | Speaker echo is getting through | Lower the volume or use headphones; try `--barge-in-ms 250` |

@@ -5,8 +5,9 @@ import math
 import os
 import signal
 import subprocess
-from functools import partial
 import sys
+import time
+from functools import partial
 import urllib.request
 from pathlib import Path
 
@@ -36,7 +37,7 @@ KOKORO_BASE_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download
 
 
 def log(line: str) -> None:
-    print(line, flush=True)
+    print(f"{time.strftime('%H:%M:%S')} {line}", flush=True)
 
 
 def raise_keyboard_interrupt(signal_number: int, frame: object) -> None:
@@ -46,6 +47,8 @@ def raise_keyboard_interrupt(signal_number: int, frame: object) -> None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="orca-talkback", description="Hear your Orca coding agents talk back.")
     parser.add_argument("--port", type=int, default=47823)
+    parser.add_argument("--verbose", action="store_true",
+                        help="log every Orca event the plugin forwards, for troubleshooting")
     parser.add_argument("--voice", default="bf_emma", help="Kokoro voice")
     parser.add_argument("--speed", type=float, default=1.1)
     parser.add_argument("--barge-in", action=argparse.BooleanOptionalAction, default=True,
@@ -159,7 +162,7 @@ def main(argv: list[str] | None = None) -> None:
     daemon = VoiceDaemon(
         FocusRules(), speaker, last_assistant_message,
         lambda reply: spoken_sentences(reply, rewrite, log=log),
-        log=log,
+        log=log, verbose=args.verbose,
     )
     server = make_server(daemon, port=args.port, log=log)
     print(f"orca-talkback listening on http://127.0.0.1:{args.port} (Ctrl+C to quit)", flush=True)

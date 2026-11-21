@@ -17,8 +17,10 @@ class VoiceDaemon:
         lookup_message: Callable[[str], str],
         to_sentences: Callable[[str], Iterable[str]],
         log: Callable[[str], None] = print,
+        verbose: bool = False,
     ) -> None:
         self._rules = rules
+        self._verbose = verbose
         self._speaker = speaker
         self._lookup_message = lookup_message
         self._to_sentences = to_sentences
@@ -34,6 +36,8 @@ class VoiceDaemon:
         if not isinstance(context, dict):
             raise ValueError("context must be an object")
         with self._lock:
+            if self._verbose:
+                self._log(f"[event] focus workspace={context.get('workspaceId')} name={context.get('displayName')!r}")
             action = self._rules.on_focus(context.get("workspaceId"))
             if action is not None:
                 self._log(f"[focus] {context.get('displayName')!r} -> {describe_action(action)}")
@@ -45,7 +49,14 @@ class VoiceDaemon:
         if not isinstance(pane_key, str) or not isinstance(state, str):
             raise ValueError("paneKey and state must be strings")
         with self._lock:
-            action = self._rules.on_status(payload.get("workspaceId"), pane_key, state)
+            if self._verbose:
+                self._log(
+                    f"[event] status pane={pane_key} state={state} "
+                    f"workspace={payload.get('workspaceId')} focused={self._rules.focused_workspace_id}"
+                )
+            action = self._rules.on_status(
+                payload.get("workspaceId"), pane_key, state, workspace_list_id=payload.get("workspaceListId"),
+            )
             if action is not None:
                 self._log(f"[status] {pane_key} {state} -> {describe_action(action)}")
             self._apply(action)

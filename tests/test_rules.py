@@ -81,3 +81,43 @@ def test_pane_state_is_tracked_while_unfocused():
     rules.on_status(OTHER, "pane-b", "working")
     rules.on_focus(OTHER)
     assert rules.on_status(OTHER, "pane-b", "done") == Speak("pane-b")
+
+
+def test_worktree_focus_matches_the_status_list_id():
+    """Orca sends a worktree's focus as its identity key, which status events carry as workspaceListId."""
+    rules = FocusRules()
+    rules.on_focus("identity:wt2:local:abc")
+    rules.on_status("repo-id::/path/to/worktree", "pane-a", "working", workspace_list_id="identity:wt2:local:abc")
+    assert rules.on_status("repo-id::/path/to/worktree", "pane-a", "done", workspace_list_id="identity:wt2:local:abc") == Speak("pane-a")
+
+
+def test_last_prompted_pane_speaks_even_when_another_workspace_is_focused():
+    rules = focused_rules()
+    rules.on_status(OTHER, "chat-pane", "working")
+    rules.on_status(OTHER, "chat-pane", "done")
+    assert rules.on_status(OTHER, "chat-pane", "working") == Stop("you sent a new prompt")
+    assert rules.on_status(OTHER, "chat-pane", "done") == Speak("chat-pane")
+
+
+def test_reply_after_answering_a_question_counts_as_a_prompt():
+    rules = focused_rules()
+    rules.on_status(OTHER, "chat-pane", "waiting")
+    rules.on_status(OTHER, "chat-pane", "working")
+    assert rules.on_status(OTHER, "chat-pane", "done") == Speak("chat-pane")
+
+
+def test_background_agent_first_seen_working_does_not_become_last_prompted():
+    rules = focused_rules()
+    rules.on_status(OTHER, "background-pane", "working")
+    assert rules.on_status(OTHER, "background-pane", "done") is None
+
+
+def test_only_the_most_recently_prompted_pane_speaks():
+    rules = focused_rules()
+    for pane in ("chat-a", "chat-b"):
+        rules.on_status(OTHER, pane, "working")
+        rules.on_status(OTHER, pane, "done")
+    rules.on_status(OTHER, "chat-a", "working")
+    rules.on_status(OTHER, "chat-b", "working")
+    assert rules.on_status(OTHER, "chat-a", "done") is None
+    assert rules.on_status(OTHER, "chat-b", "done") == Speak("chat-b")
