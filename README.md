@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <sub><strong>Status:</strong> 0.1, early. Tested on macOS (Apple Silicon) with Orca 1.4.265 and Claude Code agents. 77 daemon tests and 6 plugin tests.</sub>
+  <sub><strong>Status:</strong> 0.1, early. Tested on macOS (Apple Silicon) with Orca 1.4.265 and Claude Code agents. 97 daemon tests and 6 plugin tests.</sub>
 </p>
 
 ---
@@ -65,17 +65,19 @@ uv sync
 
 ### 2. Add the Talkback plugin to Orca
 
-The `orca` CLI ships inside the app. If `orca` is not on your PATH, use `/Applications/Orca.app/Contents/Resources/bin/orca`.
+The plugin lives in its own repo, [orca-talkback-plugin](https://github.com/CallumJMac/orca-talkback-plugin). Install it from a terminal (the `orca` CLI ships inside the app; if it is not on your PATH, use `/Applications/Orca.app/Contents/Resources/bin/orca`):
 
 ```bash
-orca plugin install orca-plugin/talkback
+orca plugin install CallumJMac/orca-talkback-plugin
 ```
 
 Orca lists the access the plugin asks for (read workspace focus and agent status) and prints a `Fingerprint: ap1-...` line. Approve exactly that:
 
 ```bash
-orca plugin install orca-plugin/talkback --approve ap1-<fingerprint Orca printed>
+orca plugin install CallumJMac/orca-talkback-plugin --approve ap1-<fingerprint Orca printed>
 ```
+
+It is also submitted to Orca's community catalog; once listed, you can install **Talkback** from **Settings, Plugins** after adding the community marketplace (`https://github.com/stablyai/orca-community-plugins.git`, ref `main`).
 
 ### 3. Run the daemon
 
@@ -166,7 +168,7 @@ uv run orca-talkback --help
 | `--input-device` | system input | Microphone for barge-in, matched by name, for example `"MacBook Pro Microphone"` |
 | `--speak-when-hidden` | off | Also speak while another app is in front (the workspace rule still applies) |
 | `--verbose` | off | Log every event the plugin forwards, with the focused workspace, for troubleshooting |
-| `--port` | `47823` | Leave as is: the plugin hard-codes this port (`DAEMON_URL` in `orca-plugin/talkback/src/worker.ts`) |
+| `--port` | `47823` | Leave as is: the plugin hard-codes this port (`DAEMON_URL` in the plugin's [`src/worker.ts`](https://github.com/CallumJMac/orca-talkback-plugin/blob/main/src/worker.ts)) |
 
 **Using Amazon Bedrock instead of an API key:**
 
@@ -232,15 +234,14 @@ Kokoro scored the highest naturalness of the 56 models on Hugging Face's [Open T
 
 ```bash
 uv sync
-uv run pytest -q                           # daemon tests, no audio hardware needed
-orca plugin test orca-plugin/talkback      # plugin tests
-orca plugin validate orca-plugin/talkback
+uv run pytest -q          # daemon tests, no audio hardware needed
 ```
+
+The plugin's code and tests are in [orca-talkback-plugin](https://github.com/CallumJMac/orca-talkback-plugin).
 
 Issues and pull requests are welcome. On the roadmap:
 
 - **More speech engines.** Synthesis is one `synthesize(text)` function; [pocket-tts](https://huggingface.co/kyutai/pocket-tts) (about 125 ms to first audio on CPU) is the first candidate.
-- **Orca's community plugin catalog**, so the plugin installs from inside Orca.
 - **Launch at login** with a launchd agent.
 
 ---

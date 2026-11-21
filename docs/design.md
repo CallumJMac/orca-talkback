@@ -60,7 +60,7 @@ All paths are relative to the repository root.
 | `src/orca_talkback/providers.py` | Rewriters for the Anthropic API (default) and Amazon Bedrock, each with a 3 s timeout and no retries. | `anthropic`, `boto3` |
 | `src/orca_talkback/speaker.py` | Synthesises sentences with Kokoro in a background thread and plays them gaplessly; runs barge-in detection during playback. `stop()` fades out within 50 ms and cancels pending synthesis. | `audio`, `kokoro-onnx` |
 | `src/orca_talkback/audio.py` | AEC3 processor factory, reference alignment and the barge-in detector, ported from `voice_loop_mac.py` with its timing invariants. The original lives in [Trelis Research voice-loop](https://github.com/TrelisResearch/voice-loop). | `livekit`, `silero-vad` |
-| `orca-plugin/talkback/` | Orca plugin manifest and worker. Subscribes to `workspace.changed` and `agent.status.changed` and POSTs the payloads unchanged to the daemon. | Orca plugin host API |
+| [orca-talkback-plugin](https://github.com/CallumJMac/orca-talkback-plugin) (separate repo) | Orca plugin manifest and worker. Subscribes to `workspace.changed` and `agent.status.changed` and POSTs the payloads unchanged to the daemon. | Orca plugin host API |
 
 Entry point: `uv run orca-talkback` (console script; `python -m orca_talkback` also works).
 
@@ -127,4 +127,4 @@ The spike also confirms the `agent.status.changed` payload. It checks whether `l
   1. Let a long reply play with speakers at normal volume and stay silent; it must finish.
   2. Speak over it; it must stop within about 300 ms.
 - **Manual focus:** switch workspace mid-reply; the audio stops. Submit a new prompt with Wispr; the audio stops.
-- **Plugin:** `orca plugin validate` and `orca plugin test` on `orca-plugin/talkback/`.
+- **Plugin:** `orca plugin validate` and `orca plugin test` in the orca-talkback-plugin repo.
