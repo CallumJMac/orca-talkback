@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <sub><strong>Status:</strong> 0.1, early. Tested on macOS (Apple Silicon) with Orca 1.4.265 and Claude Code agents. 97 daemon tests and 6 plugin tests.</sub>
+  <sub><strong>Status:</strong> 0.1, early. Tested on macOS (Apple Silicon) with Orca 1.4.265 and Claude Code agents. 112 daemon tests and 14 plugin tests.</sub>
 </p>
 
 ---
