@@ -57,7 +57,7 @@ The last line is the next prompt being sent: playback stops the moment the agent
 ### 1. Install and set up
 
 ```bash
-uv tool install git+https://github.com/CallumJMac/orca-talkback
+uv tool install --python 3.14 orca-talkback
 orca-talkback setup
 ```
 
