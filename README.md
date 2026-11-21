@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <sub><strong>Status:</strong> 0.1, early. Tested on macOS (Apple Silicon) with Orca 1.4.265 and Claude Code agents. 112 daemon tests and 14 plugin tests.</sub>
+  <sub><strong>Status:</strong> 0.1, early. Tested on macOS (Apple Silicon) with Orca 1.4.265 and Claude Code agents. 102 daemon tests and 14 plugin tests.</sub>
 </p>
 
 ---
@@ -52,7 +52,7 @@ The last line is the next prompt being sent: playback stops the moment the agent
 
 ## Quick start
 
-**You need:** macOS on Apple Silicon, [Homebrew](https://brew.sh), [uv](https://docs.astral.sh/uv/), [Orca](https://github.com/stablyai/orca) 1.4.248 or newer, and an [Anthropic API key](https://console.anthropic.com/) (or [Amazon Bedrock](#configuration) access).
+**You need:** macOS on Apple Silicon, [Homebrew](https://brew.sh), [uv](https://docs.astral.sh/uv/), and [Orca](https://github.com/stablyai/orca) 1.4.248 or newer. No API keys: everything runs on your Mac.
 
 ### 1. Install
 
@@ -84,7 +84,6 @@ It is also submitted to Orca's community catalog; once listed, you can install *
 ### 3. Run the daemon
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
 uv run orca-talkback
 ```
 
@@ -110,7 +109,6 @@ sequenceDiagram
     participant Orca as Orca agent pane
     participant Plugin as Talkback plugin
     participant Daemon as orca-talkback
-    participant Haiku as Claude Haiku 5.5
     participant Speakers
 
     You->>Orca: dictate a prompt
@@ -120,19 +118,18 @@ sequenceDiagram
     Orca-->>Plugin: agent done
     Plugin->>Daemon: focus, then status
     Daemon->>Orca: read the full reply
-    Daemon->>Haiku: rewrite as 1 to 3 spoken sentences
-    Haiku-->>Daemon: first sentence (streamed)
-    Daemon->>Speakers: Kokoro speaks it while the rest streams in
+    Daemon->>Daemon: take its hidden spoken line
+    Daemon->>Speakers: Kokoro speaks it, first sentence first
     You->>Daemon: start talking (echo-cancelled mic)
     Daemon->>Speakers: fade out
 ```
 
 1. The **Talkback plugin** is a tiny Orca worker. It forwards workspace focus and agent status to the daemon on `127.0.0.1:47823`, in order, and re-sends focus before every status so a restarted daemon catches up.
-2. The **daemon** decides what to do with each event (table below). When a reply should be spoken, it reads the agent's full message through the Orca CLI and picks the quickest good spoken version: the agent's own hidden spoken line (see [Speaking or reading](#speaking-or-reading)), the reply itself if it is short and plain, or otherwise a **Claude Haiku 5.5** rewrite.
-3. **Kokoro** synthesises the first sentence on its own, so you hear something while the rest is still streaming in. A newer reply replaces the current one; replies never queue up.
+2. The **daemon** decides what to do with each event (table below). When a reply should be spoken, it reads the agent's full message through the Orca CLI and takes the agent's own hidden spoken line (see [Speaking or reading](#speaking-or-reading)), or, if there is none, a cleaned-up version of the reply with code, tables and links removed.
+3. **Kokoro** synthesises the first sentence on its own, so you hear it while the rest is still being synthesised. A newer reply replaces the current one; replies never queue up.
 4. While it speaks, **barge-in** listens: every sample it plays is fed to WebRTC AEC3 as the echo reference, so only *your* voice gets through to Silero VAD. It needs about 160 ms of your voice to trigger, then fades out over 30 ms.
 
-If the rewrite fails or times out (3 s), it speaks a cleaned-up version of the reply instead. If the daemon is not running, Orca behaves exactly as before.
+If the daemon is not running, Orca behaves exactly as before.
 
 ### When it speaks
 
@@ -171,7 +168,7 @@ The Talkback switch can also change how Claude Code *writes*. With the voice-mod
 | 🔊 On | Its normal reply, plus a hidden `<!-- spoken: ... -->` line at the end | That line, as the agent wrote it | under a second |
 | 🔇 Muted | Its normal reply, for reading | Nothing | |
 
-The spoken line is an HTML comment, so Orca hides it. No second model is involved: the agent that did the work says what it means. Without the hook, or when an agent forgets the line, short plain replies are spoken as written and only long or technical ones go to Haiku.
+The spoken line is an HTML comment, so Orca hides it. The agent that did the work says what it means, and nothing else sits between the reply and the voice. Without the hook, or when an agent forgets the line, a cleaned-up version of the reply is spoken instead: code, tables and links are dropped and long replies are cut at a sentence boundary.
 
 To install the hook, add this to `~/.claude/settings.json` (it needs `jq` and `curl`, both built into recent macOS):
 
@@ -197,10 +194,6 @@ uv run orca-talkback --help
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--provider` | `anthropic` | Who rewrites replies into speech: `anthropic`, `bedrock`, or `none` (speak cleaned-up text, no API calls) |
-| `--model` | `claude-haiku-5-5` | Rewrite model. On Bedrock: `us.anthropic.claude-haiku-5-5` |
-| `--aws-profile` | `$AWS_PROFILE` | AWS profile for `--provider bedrock` |
-| `--aws-region` | `$AWS_REGION` or `us-east-1` | AWS region for `--provider bedrock` |
 | `--voice` | `bf_emma` | Kokoro voice. Try `af_heart`, `af_bella` or `bm_george` |
 | `--speed` | `1.1` | Speaking rate |
 | `--no-barge-in` | barge-in on | Turn off talking over it |
@@ -211,13 +204,7 @@ uv run orca-talkback --help
 | `--verbose` | off | Log every event the plugin forwards, with the focused workspace, for troubleshooting |
 | `--port` | `47823` | Leave as is: the plugin hard-codes this port (`DAEMON_URL` in the plugin's [`src/worker.ts`](https://github.com/CallumJMac/orca-talkback-plugin/blob/main/src/worker.ts)) |
 
-**Using Amazon Bedrock instead of an API key:**
-
-```bash
-uv run orca-talkback --provider bedrock --aws-profile my-profile
-```
-
-Each rewrite is one short call (capped at 200 output tokens) with a 3 s timeout and no retries. Set `ORCA_CLI_COMMAND` if your `orca` binary lives somewhere unusual.
+Set `ORCA_CLI_COMMAND` if your `orca` binary lives somewhere unusual.
 
 ---
 
@@ -227,7 +214,7 @@ Each rewrite is one short call (capped at 200 output tokens) with a 3 s timeout 
 |---|---|
 | Microphone audio | Stays on your Mac. Opened only while it is speaking, used only for barge-in, never recorded. |
 | Speech | Synthesised on your Mac. |
-| The agent's reply text | Sent to the Anthropic API or Bedrock for the rewrite. Use `--provider none` to keep everything local. |
+| The agent's reply text | Read from Orca on your Mac and never sent anywhere. orca-talkback makes no network calls. |
 | The daemon | Listens on `127.0.0.1` only and rejects non-JSON requests, which blocks simple cross-site requests from web pages. |
 
 ---
@@ -239,7 +226,7 @@ Each rewrite is one short call (capped at 200 output tokens) with a 3 s timeout 
 | Nothing is ever spoken | Daemon not running, or plugin not installed | `curl -s 127.0.0.1:47823/health`; `orca plugin list` should show `talkback` running |
 | One agent never speaks | Its workspace was not on screen, or Orca was not in front, when it finished | By design. Run with `--verbose` to see every event and which workspace Orca reports as focused |
 | It stops when I click another app | Replies only play while Orca is in front | By design; pass `--speak-when-hidden` to keep listening from other apps |
-| It reads out markdown-ish text | The rewrite failed, so it fell back to plain text | Look for `[spoken] rewrite failed` in the daemon log; check your API key or AWS profile |
+| It reads the reply word for word | The agent did not write a spoken line | Check the voice-mode hook is installed (see [Speaking or reading](#speaking-or-reading)) and that Talkback is on for the session |
 | Talking over it never stops it | The system input is a virtual device (Zoom, BlackHole), permission was denied, or the threshold is too strict | Check the `[audio] barge-in microphone:` line at startup and pass `--input-device "MacBook Pro Microphone"`; allow your terminal under System Settings, Privacy & Security, Microphone; try `--vad-threshold 0.6` |
 | It stops on its own | Speaker echo is getting through | Lower the volume or use headphones; try `--barge-in-ms 250` |
 | `orca plugin logs` says `daemon unreachable` | Orca sent an event while the daemon was down | Start the daemon. The plugin re-sends focus with the next event, so nothing needs restarting |

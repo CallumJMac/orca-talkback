@@ -40,7 +40,7 @@ Talk to Claude Code sessions running in Orca and hear them talk back, like voice
    agent.status.changed ────► POST /status {workspaceId, paneKey, state, sessionId}
                               ▼
  orca-talkback daemon (Python, 127.0.0.1 only)
-   rules ─► Haiku streaming rewrite ─► sentence chunks ─► Kokoro ─► speakers
+   rules ─► agent's hidden spoken line ─► sentence chunks ─► Kokoro ─► speakers
                                                             │ reference signal
    mic ─► WebRTC AEC3 ─► Silero VAD ─► user speaking ─► stop playback
 ```
@@ -56,8 +56,7 @@ All paths are relative to the repository root.
 | `src/orca_talkback/server.py` | Localhost HTTP server: `POST /focus`, `POST /status`, `POST /stop`, `GET /health`. Validates payloads and passes them to `rules`. | `rules`, `speaker` |
 | `src/orca_talkback/rules.py` | Pure state machine. Holds the focused workspace id; turns events into actions (`speak(text)`, `stop()`, nothing). No I/O. | none |
 | `src/orca_talkback/replies.py` | Finds the pane in `orca agent list --json` (matched on `paneKey`), then reads its full last assistant message with `orca agent read` (the list truncates messages to 200 characters). | `orca` CLI |
-| `src/orca_talkback/spoken.py` | Turns a reply into 1 to 3 spoken sentences through a streaming rewriter, with the stripped fallback; splits text into sentences. | `providers` |
-| `src/orca_talkback/providers.py` | Rewriters for the Anthropic API (default) and Amazon Bedrock, each with a 3 s timeout and no retries. | `anthropic`, `boto3` |
+| `src/orca_talkback/spoken.py` | Finds the agent's hidden spoken line, or cleans up the reply when there is none; splits text into sentences. | none |
 | `src/orca_talkback/speaker.py` | Synthesises sentences with Kokoro in a background thread and plays them gaplessly; runs barge-in detection during playback. `stop()` fades out within 50 ms and cancels pending synthesis. | `audio`, `kokoro-onnx` |
 | `src/orca_talkback/audio.py` | AEC3 processor factory, reference alignment and the barge-in detector, ported from `voice_loop_mac.py` with its timing invariants. The original lives in [Trelis Research voice-loop](https://github.com/TrelisResearch/voice-loop). | `livekit`, `silero-vad` |
 | [orca-talkback-plugin](https://github.com/CallumJMac/orca-talkback-plugin) (separate repo) | Orca plugin manifest and worker. Subscribes to `workspace.changed` and `agent.status.changed` and POSTs the payloads unchanged to the daemon. | Orca plugin host API |
@@ -82,9 +81,8 @@ Replies that finished while their workspace was not focused are not stored and a
 
 ## Spoken text
 
-- **Rewrite:** Claude Haiku 5.5 (Anthropic API by default, or Bedrock) turns the reply into one to three conversational sentences: no markdown, code, paths, URLs or dashes.
-- **Streaming:** the Bedrock streaming response is split into sentences, so synthesis of the first sentence starts before the rewrite finishes.
-- **Fallback:** if the rewrite provider fails, the reply is stripped of code blocks, tables, links and markdown and cut to 600 characters at a sentence boundary.
+- **Spoken text:** the agent ends its reply with a hidden `<!-- spoken: ... -->` line when Talkback is on (a Claude Code `UserPromptSubmit` hook asks for it); the daemon speaks that line, or a cleaned-up version of the reply when there is none.
+- **Fallback:** with no spoken line, the reply is stripped of code blocks, tables, links and markdown and cut to 600 characters at a sentence boundary.
 - **Voice:** `bf_emma` at speed 1.1 by default, overridable with `--voice` and `--speed`.
 
 ## Barge-in and echo
@@ -97,7 +95,6 @@ Replies that finished while their workspace was not focused are not stored and a
 ## Error handling
 
 - **Daemon not running:** the plugin's POST fails; the worker catches it, logs once per minute at most, and carries on.
-- **Bedrock error or timeout (3 s):** use the stripped fallback text.
 - **Kokoro or audio device error:** log the error, drop that reply, keep the daemon running.
 - **Mic permission denied:** log a clear message at startup and run without barge-in. Playback still works.
 - **Malformed request:** respond with 400 and ignore it.

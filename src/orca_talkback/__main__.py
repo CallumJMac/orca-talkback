@@ -25,15 +25,7 @@ from orca_talkback.speaker import (
     open_sounddevice_output,
     resolve_input_device,
 )
-from orca_talkback.providers import (
-    ANTHROPIC_DEFAULT_MODEL,
-    BEDROCK_DEFAULT_MODEL,
-    anthropic_rewriter,
-    bedrock_rewriter,
-    make_anthropic_client,
-    make_bedrock_client,
-)
-from orca_talkback.spoken import Rewriter, spoken_sentences
+from orca_talkback.spoken import spoken_sentences
 
 KOKORO_BASE_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
 
@@ -62,13 +54,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--vad-threshold", type=float, default=0.8)
     parser.add_argument("--input-device", default=None,
                         help="microphone for barge-in, matched by name (default: the system input)")
-    parser.add_argument("--provider", choices=["anthropic", "bedrock", "none"], default="anthropic",
-                        help="who rewrites replies into speech: the Anthropic API, Amazon Bedrock, or none (plain text)")
-    parser.add_argument("--model", default=None,
-                        help=f"rewrite model (default {ANTHROPIC_DEFAULT_MODEL}; on Bedrock {BEDROCK_DEFAULT_MODEL})")
-    parser.add_argument("--aws-profile", default=os.environ.get("AWS_PROFILE"),
-                        help="AWS profile for --provider bedrock (default: the standard AWS credential chain)")
-    parser.add_argument("--aws-region", default=os.environ.get("AWS_REGION", "us-east-1"))
     return parser.parse_args(argv)
 
 
@@ -96,24 +81,6 @@ def start_front_app_watch(daemon: VoiceDaemon) -> None:
                 log(f"[speak] front app check failed: {error!r}")
 
     threading.Thread(target=watch, name="front-app-watch", daemon=True).start()
-
-
-def make_rewriter(args: argparse.Namespace) -> Rewriter | None:
-    if args.provider == "none":
-        log("[spoken] rewrite off; speaking cleaned-up reply text")
-        return None
-    try:
-        if args.provider == "bedrock":
-            model = args.model or BEDROCK_DEFAULT_MODEL
-            profile = args.aws_profile or "default credential chain"
-            log(f"[spoken] rewriting with {model} on Bedrock ({profile}, {args.aws_region})")
-            return bedrock_rewriter(make_bedrock_client(args.aws_profile, args.aws_region), model)
-        model = args.model or ANTHROPIC_DEFAULT_MODEL
-        log(f"[spoken] rewriting with {model} on the Anthropic API")
-        return anthropic_rewriter(make_anthropic_client(), model)
-    except Exception as error:
-        log(f"[spoken] {args.provider} unavailable ({error}); using plain text")
-        return None
 
 
 def choose_microphone(requested_name: str | None):
@@ -178,10 +145,9 @@ def main(argv: list[str] | None = None) -> None:
         open_input=choose_microphone(args.input_device) if args.barge_in else None,
         make_detector=detector_factory, log=log,
     )
-    rewrite = make_rewriter(args)
     daemon = VoiceDaemon(
         FocusRules(), speaker, last_assistant_message,
-        lambda reply: spoken_sentences(reply, rewrite, log=log),
+        spoken_sentences,
         log=log, verbose=args.verbose,
         front_app_check=None if args.speak_when_hidden else orca_is_frontmost,
     )
