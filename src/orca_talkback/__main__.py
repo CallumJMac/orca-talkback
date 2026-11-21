@@ -5,6 +5,7 @@ import math
 import os
 import signal
 import subprocess
+from functools import partial
 import sys
 import urllib.request
 from pathlib import Path
@@ -13,7 +14,14 @@ from orca_talkback.audio import CHUNK_SAMPLES, SAMPLE_RATE, BargeInDetector, mak
 from orca_talkback.replies import last_assistant_message
 from orca_talkback.rules import FocusRules
 from orca_talkback.server import VoiceDaemon, make_server
-from orca_talkback.speaker import Speaker, open_sounddevice_input, open_sounddevice_output
+from orca_talkback.speaker import (
+    Speaker,
+    default_input_name,
+    looks_virtual,
+    open_sounddevice_input,
+    open_sounddevice_output,
+    resolve_input_device,
+)
 from orca_talkback.providers import (
     ANTHROPIC_DEFAULT_MODEL,
     BEDROCK_DEFAULT_MODEL,
@@ -45,6 +53,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--barge-in-ms", type=int, default=160,
                         help="continuous speech needed to interrupt")
     parser.add_argument("--vad-threshold", type=float, default=0.8)
+    parser.add_argument("--input-device", default=None,
+                        help="microphone for barge-in, matched by name (default: the system input)")
     parser.add_argument("--provider", choices=["anthropic", "bedrock", "none"], default="anthropic",
                         help="who rewrites replies into speech: the Anthropic API, Amazon Bedrock, or none (plain text)")
     parser.add_argument("--model", default=None,
@@ -81,6 +91,20 @@ def make_rewriter(args: argparse.Namespace) -> Rewriter | None:
     except Exception as error:
         log(f"[spoken] {args.provider} unavailable ({error}); using plain text")
         return None
+
+
+def choose_microphone(requested_name: str | None):
+    """Pick the barge-in mic and say which one, since a virtual default input silently breaks barge-in."""
+    if requested_name:
+        index, device_name = resolve_input_device(requested_name)
+        log(f"[audio] barge-in microphone: {device_name}")
+        return partial(open_sounddevice_input, device=index)
+    device_name = default_input_name()
+    log(f"[audio] barge-in microphone: {device_name} (system default)")
+    if looks_virtual(device_name):
+        log(f"[audio] warning: {device_name!r} looks like a virtual device, so barge-in may never hear you; "
+            "pass --input-device \"MacBook Pro Microphone\" (or your mic's name)")
+    return open_sounddevice_input
 
 
 def load_kokoro():
@@ -128,7 +152,7 @@ def main(argv: list[str] | None = None) -> None:
 
     speaker = Speaker(
         synthesize, open_sounddevice_output,
-        open_input=open_sounddevice_input if args.barge_in else None,
+        open_input=choose_microphone(args.input_device) if args.barge_in else None,
         make_detector=detector_factory, log=log,
     )
     rewrite = make_rewriter(args)

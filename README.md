@@ -163,6 +163,7 @@ uv run orca-talkback --help
 | `--no-barge-in` | barge-in on | Turn off talking over it |
 | `--barge-in-ms` | `160` | Continuous speech needed to interrupt. Raise it if it stops too easily |
 | `--vad-threshold` | `0.8` | Speech probability threshold. Lower it if it never stops |
+| `--input-device` | system input | Microphone for barge-in, matched by name, for example `"MacBook Pro Microphone"` |
 | `--port` | `47823` | Leave as is: the plugin hard-codes this port (`DAEMON_URL` in `orca-plugin/talkback/src/worker.ts`) |
 
 **Using Amazon Bedrock instead of an API key:**
@@ -193,7 +194,7 @@ Each rewrite is one short call (capped at 200 output tokens) with a 3 s timeout 
 | Nothing is ever spoken | Daemon not running, or plugin not installed | `curl -s 127.0.0.1:47823/health`; `orca plugin list` should show `talkback` running |
 | One agent never speaks | Its workspace was not focused when it finished | By design. Switch to it before it finishes |
 | It reads out markdown-ish text | The rewrite failed, so it fell back to plain text | Look for `[spoken] rewrite failed` in the daemon log; check your API key or AWS profile |
-| Talking over it never stops it | Microphone permission denied, or threshold too strict | Allow your terminal in System Settings, Privacy & Security, Microphone; try `--vad-threshold 0.6` |
+| Talking over it never stops it | The system input is a virtual device (Zoom, BlackHole), permission was denied, or the threshold is too strict | Check the `[audio] barge-in microphone:` line at startup and pass `--input-device "MacBook Pro Microphone"`; allow your terminal under System Settings, Privacy & Security, Microphone; try `--vad-threshold 0.6` |
 | It stops on its own | Speaker echo is getting through | Lower the volume or use headphones; try `--barge-in-ms 250` |
 | `orca plugin logs` says `daemon unreachable` | Orca sent an event while the daemon was down | Start the daemon. The plugin re-sends focus with the next event, so nothing needs restarting |
 

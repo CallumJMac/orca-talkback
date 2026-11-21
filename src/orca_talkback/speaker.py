@@ -198,7 +198,36 @@ def open_sounddevice_output(sample_rate: int) -> Any:
     return sounddevice.OutputStream(samplerate=sample_rate, channels=1, dtype="float32")
 
 
-def open_sounddevice_input(on_chunk: Callable[[np.ndarray], None]) -> Any:
+VIRTUAL_INPUT_MARKERS = ("blackhole", "zoom", "teams", "loopback", "soundflower", "aggregate", "virtual")
+
+
+def looks_virtual(device_name: str) -> bool:
+    """True for loopback and meeting-app devices, which never carry your voice."""
+    lowered = device_name.lower()
+    return any(marker in lowered for marker in VIRTUAL_INPUT_MARKERS)
+
+
+def resolve_input_device(name: str, query_devices: Callable[[], Any] | None = None) -> tuple[int, str]:
+    """Find the first input device whose name contains `name` (case-insensitive)."""
+    if query_devices is None:
+        import sounddevice
+
+        query_devices = sounddevice.query_devices
+    inputs = [(index, device["name"]) for index, device in enumerate(query_devices()) if device["max_input_channels"] > 0]
+    for index, device_name in inputs:
+        if name.lower() in device_name.lower():
+            return index, device_name
+    available = ", ".join(device_name for _, device_name in inputs)
+    raise ValueError(f"no input device matching {name!r}; available inputs: {available}")
+
+
+def default_input_name() -> str:
+    import sounddevice
+
+    return sounddevice.query_devices(kind="input")["name"]
+
+
+def open_sounddevice_input(on_chunk: Callable[[np.ndarray], None], device: int | None = None) -> Any:
     import sounddevice
 
     def callback(indata, frames, time_info, status):
@@ -206,5 +235,5 @@ def open_sounddevice_input(on_chunk: Callable[[np.ndarray], None]) -> Any:
 
     return sounddevice.InputStream(
         samplerate=SAMPLE_RATE, channels=1, dtype="float32",
-        blocksize=CHUNK_SAMPLES, callback=callback,
+        blocksize=CHUNK_SAMPLES, callback=callback, device=device,
     )

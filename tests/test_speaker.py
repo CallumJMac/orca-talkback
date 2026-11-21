@@ -3,7 +3,9 @@ import time
 
 import numpy as np
 
-from orca_talkback.speaker import FADE_SECONDS, Speaker
+import pytest
+
+from orca_talkback.speaker import FADE_SECONDS, Speaker, looks_virtual, resolve_input_device
 
 SAMPLE_RATE = 24000
 
@@ -183,3 +185,26 @@ def test_input_stream_is_closed_when_output_cleanup_fails():
     speaker.wait(5)
     assert speaker.test_inputs[0].closed
     assert any("stream cleanup failed" in line for line in logs)
+
+
+FAKE_DEVICES = [
+    {"name": "BlackHole 16ch", "max_input_channels": 16},
+    {"name": "MacBook Pro Speakers", "max_input_channels": 0},
+    {"name": "MacBook Pro Microphone", "max_input_channels": 1},
+    {"name": "ZoomAudioDevice", "max_input_channels": 2},
+]
+
+
+def test_resolve_input_device_matches_name_case_insensitively():
+    assert resolve_input_device("macbook pro mic", lambda: FAKE_DEVICES) == (2, "MacBook Pro Microphone")
+
+
+def test_resolve_input_device_ignores_output_only_devices():
+    with pytest.raises(ValueError, match="MacBook Pro Microphone"):
+        resolve_input_device("Speakers", lambda: FAKE_DEVICES)
+
+
+def test_virtual_input_names_are_flagged():
+    assert looks_virtual("ZoomAudioDevice")
+    assert looks_virtual("Blackhole Input New")
+    assert not looks_virtual("MacBook Pro Microphone")
