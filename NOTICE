@@ -1,0 +1,7 @@
+orca-talkback
+Copyright 2026 Callum Macpherson
+
+This product includes software derived from voice-loop by Trelis Research
+(https://github.com/TrelisResearch/voice-loop), licensed under the Apache
+License, Version 2.0. The echo-cancellation and barge-in logic in
+src/orca_talkback/audio.py is ported from voice-loop's voice_loop_mac.py.
