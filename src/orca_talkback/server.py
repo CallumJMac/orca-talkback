@@ -18,9 +18,11 @@ class VoiceDaemon:
         to_sentences: Callable[[str], Iterable[str]],
         log: Callable[[str], None] = print,
         verbose: bool = False,
+        front_app_check: Callable[[], bool] | None = None,
     ) -> None:
         self._rules = rules
         self._verbose = verbose
+        self._front_app_check = front_app_check
         self._speaker = speaker
         self._lookup_message = lookup_message
         self._to_sentences = to_sentences
@@ -65,10 +67,18 @@ class VoiceDaemon:
         self._log("[stop] requested")
         self._speaker.stop("requested")
 
+    def enforce_front_app(self) -> None:
+        """Stop playback if Orca has left the front. Called periodically while speaking."""
+        if self._front_app_check is not None and self._speaker.is_playing and not self._front_app_check():
+            self._speaker.stop("Orca is not the app in front")
+
     def _apply(self, action: Action | None) -> None:
         if isinstance(action, Stop):
             self._speaker.stop(action.reason)
         elif isinstance(action, Speak):
+            if self._front_app_check is not None and not self._front_app_check():
+                self._log("[speak] skipped: Orca is not the app in front")
+                return
             message = self._lookup_message(action.pane_key)
             if not message.strip():
                 self._log(f"[speak] no message for {action.pane_key}")

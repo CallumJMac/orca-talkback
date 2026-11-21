@@ -132,15 +132,14 @@ If the rewrite fails or times out (3 s), it speaks a cleaned-up version of the r
 
 ### When it speaks
 
-Orca reports focus per workspace, and repeats `working` events throughout a turn, so only a change of state counts.
+It only speaks while you are looking at the agent: **Orca must be the app in front**, and the agent must be **in the workspace on screen, or the chat you just sent a prompt to**. The second case exists because Orca's focus signal follows the sidebar, not chats, so sending a chat a prompt is the reliable sign you are viewing it. Orca repeats `working` events throughout a turn, so only a change of state counts.
 
 | Event | Action |
 |---|---|
-| An agent in the **focused** workspace finishes | Speak its reply |
-| The agent **you last sent a prompt to** finishes, wherever it lives | Speak its reply (so a chat on screen speaks even when Orca reports another workspace as focused) |
-| Any other agent finishes | Nothing, and it is never replayed later |
-| You send a prompt, or an agent in the focused workspace starts working | Stop |
-| You switch workspace | Stop |
+| An agent you are viewing finishes, with Orca in front | Speak its reply |
+| An agent finishes anywhere else, or while another app is in front | Nothing, and it is never replayed later |
+| You send a prompt, or the agent on screen starts working again | Stop |
+| You pick another workspace, or switch away from Orca | Stop (and the chat you prompted no longer counts as on screen) |
 | You start talking | Stop |
 
 The design document, with the full rules and trade-offs, is in [`docs/design.md`](docs/design.md).
@@ -165,6 +164,7 @@ uv run orca-talkback --help
 | `--barge-in-ms` | `160` | Continuous speech needed to interrupt. Raise it if it stops too easily |
 | `--vad-threshold` | `0.8` | Speech probability threshold. Lower it if it never stops |
 | `--input-device` | system input | Microphone for barge-in, matched by name, for example `"MacBook Pro Microphone"` |
+| `--speak-when-hidden` | off | Also speak while another app is in front (the workspace rule still applies) |
 | `--verbose` | off | Log every event the plugin forwards, with the focused workspace, for troubleshooting |
 | `--port` | `47823` | Leave as is: the plugin hard-codes this port (`DAEMON_URL` in `orca-plugin/talkback/src/worker.ts`) |
 
@@ -194,7 +194,8 @@ Each rewrite is one short call (capped at 200 output tokens) with a 3 s timeout 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Nothing is ever spoken | Daemon not running, or plugin not installed | `curl -s 127.0.0.1:47823/health`; `orca plugin list` should show `talkback` running |
-| One agent never speaks | It was neither in the focused workspace nor the agent you last prompted | By design. Run with `--verbose` to see every event and which workspace Orca reports as focused |
+| One agent never speaks | Its workspace was not on screen, or Orca was not in front, when it finished | By design. Run with `--verbose` to see every event and which workspace Orca reports as focused |
+| It stops when I click another app | Replies only play while Orca is in front | By design; pass `--speak-when-hidden` to keep listening from other apps |
 | It reads out markdown-ish text | The rewrite failed, so it fell back to plain text | Look for `[spoken] rewrite failed` in the daemon log; check your API key or AWS profile |
 | Talking over it never stops it | The system input is a virtual device (Zoom, BlackHole), permission was denied, or the threshold is too strict | Check the `[audio] barge-in microphone:` line at startup and pass `--input-device "MacBook Pro Microphone"`; allow your terminal under System Settings, Privacy & Security, Microphone; try `--vad-threshold 0.6` |
 | It stops on its own | Speaker echo is getting through | Lower the volume or use headphones; try `--barge-in-ms 250` |
@@ -206,7 +207,7 @@ Each rewrite is one short call (capped at 200 output tokens) with a 3 s timeout 
 
 - **macOS only.** Tested on Apple Silicon. Linux may work but is untested.
 - **Claude Code is the tested agent.** Other Orca agents report the same events and should work, but have not been tried.
-- **Focus is per workspace, not per pane.** Two agents in the same workspace can both speak; the newer reply wins.
+- **Orca does not report which chat or tab is on screen.** orca-talkback infers it from the sidebar focus and from the chat you last prompted. If you prompt one chat and then just look at another without prompting it, the first one's reply still plays. In a worktree running several agents, any of them can speak; the newer reply wins.
 - **Dictation overlap.** Your dictation tool records from its own microphone, without echo cancellation. If you start dictating at the exact moment you barge in, it may catch the last fraction of a second of speech.
 
 ---

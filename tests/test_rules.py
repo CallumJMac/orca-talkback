@@ -91,7 +91,8 @@ def test_worktree_focus_matches_the_status_list_id():
     assert rules.on_status("repo-id::/path/to/worktree", "pane-a", "done", workspace_list_id="identity:wt2:local:abc") == Speak("pane-a")
 
 
-def test_last_prompted_pane_speaks_even_when_another_workspace_is_focused():
+def test_chat_you_just_prompted_speaks_even_though_orca_reports_another_workspace():
+    """Orca's focus event does not follow chats, so prompting one is the signal that you are viewing it."""
     rules = focused_rules()
     rules.on_status(OTHER, "chat-pane", "working")
     rules.on_status(OTHER, "chat-pane", "done")
@@ -99,25 +100,40 @@ def test_last_prompted_pane_speaks_even_when_another_workspace_is_focused():
     assert rules.on_status(OTHER, "chat-pane", "done") == Speak("chat-pane")
 
 
-def test_reply_after_answering_a_question_counts_as_a_prompt():
+def test_picking_another_workspace_means_you_moved_on_from_the_chat():
     rules = focused_rules()
-    rules.on_status(OTHER, "chat-pane", "waiting")
+    rules.on_status(OTHER, "chat-pane", "done")
     rules.on_status(OTHER, "chat-pane", "working")
+    rules.on_focus("workspace-elsewhere")
+    assert rules.on_status(OTHER, "chat-pane", "done") is None
+
+
+def test_repeated_focus_for_the_same_workspace_keeps_the_chat():
+    rules = focused_rules()
+    rules.on_status(OTHER, "chat-pane", "done")
+    rules.on_status(OTHER, "chat-pane", "working")
+    rules.on_focus(FOCUSED)  # the plugin re-sends focus before every status
     assert rules.on_status(OTHER, "chat-pane", "done") == Speak("chat-pane")
 
 
-def test_background_agent_first_seen_working_does_not_become_last_prompted():
+def test_background_agent_first_seen_working_is_not_treated_as_prompted():
     rules = focused_rules()
     rules.on_status(OTHER, "background-pane", "working")
     assert rules.on_status(OTHER, "background-pane", "done") is None
 
 
-def test_only_the_most_recently_prompted_pane_speaks():
+def test_only_the_most_recently_prompted_chat_speaks():
     rules = focused_rules()
     for pane in ("chat-a", "chat-b"):
-        rules.on_status(OTHER, pane, "working")
         rules.on_status(OTHER, pane, "done")
     rules.on_status(OTHER, "chat-a", "working")
     rules.on_status(OTHER, "chat-b", "working")
     assert rules.on_status(OTHER, "chat-a", "done") is None
     assert rules.on_status(OTHER, "chat-b", "done") == Speak("chat-b")
+
+
+def test_answering_a_question_in_the_focused_workspace_stops_then_speaks():
+    rules = focused_rules()
+    rules.on_status(FOCUSED, "chat-pane", "waiting")
+    assert rules.on_status(FOCUSED, "chat-pane", "working") == Stop("you sent a new prompt")
+    assert rules.on_status(FOCUSED, "chat-pane", "done") == Speak("chat-pane")

@@ -25,7 +25,8 @@ class FakeSpeaker:
         self.stops.append(reason)
 
 
-def make_daemon(messages: dict[str, str] | None = None, lookup_message=None, verbose: bool = False):
+def make_daemon(messages: dict[str, str] | None = None, lookup_message=None, verbose: bool = False,
+                front_app_check=None):
     speaker = FakeSpeaker()
     log_lines: list[str] = []
     daemon = VoiceDaemon(
@@ -34,6 +35,7 @@ def make_daemon(messages: dict[str, str] | None = None, lookup_message=None, ver
         to_sentences=lambda reply: [f"spoken: {reply}"],
         log=log_lines.append,
         verbose=verbose,
+        front_app_check=front_app_check,
     )
     daemon.log_lines = log_lines
     return daemon, speaker
@@ -236,3 +238,34 @@ def test_quiet_by_default():
     daemon, _ = make_daemon()
     daemon.handle_status(status_payload("workspace-other", "pane-b", "working"))
     assert not [line for line in daemon.log_lines if line.startswith("[event]")]
+
+
+def test_reply_is_not_spoken_while_orca_is_not_in_front():
+    daemon, speaker = make_daemon({"pane-a": "All tests pass."}, front_app_check=lambda: False)
+    daemon.handle_focus(focus_payload(FOCUSED))
+    daemon.handle_status(status_payload(FOCUSED, "pane-a", "working"))
+    daemon.handle_status(status_payload(FOCUSED, "pane-a", "done"))
+    assert speaker.spoken == []
+    assert "[speak] skipped: Orca is not the app in front" in daemon.log_lines
+
+
+def test_playback_stops_when_orca_leaves_the_front():
+    orca_in_front = [True]
+    daemon, speaker = make_daemon(front_app_check=lambda: orca_in_front[0])
+    speaker.is_playing = True
+    daemon.enforce_front_app()
+    assert speaker.stops == []
+    orca_in_front[0] = False
+    daemon.enforce_front_app()
+    assert speaker.stops == ["Orca is not the app in front"]
+
+
+def test_front_app_check_is_off_when_not_configured():
+    daemon, speaker = make_daemon({"pane-a": "All tests pass."})
+    daemon.handle_focus(focus_payload(FOCUSED))
+    daemon.handle_status(status_payload(FOCUSED, "pane-a", "working"))
+    daemon.handle_status(status_payload(FOCUSED, "pane-a", "done"))
+    speaker.is_playing = True
+    daemon.enforce_front_app()
+    assert speaker.spoken == [["spoken: All tests pass."]]
+    assert speaker.stops == ["focus changed", "agent started working"]

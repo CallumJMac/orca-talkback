@@ -6,12 +6,14 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from functools import partial
 import urllib.request
 from pathlib import Path
 
 from orca_talkback.audio import CHUNK_SAMPLES, SAMPLE_RATE, BargeInDetector, make_aec_processor, make_speech_probability
+from orca_talkback.frontmost import orca_is_frontmost
 from orca_talkback.replies import last_assistant_message
 from orca_talkback.rules import FocusRules
 from orca_talkback.server import VoiceDaemon, make_server
@@ -47,6 +49,8 @@ def raise_keyboard_interrupt(signal_number: int, frame: object) -> None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="orca-talkback", description="Hear your Orca coding agents talk back.")
     parser.add_argument("--port", type=int, default=47823)
+    parser.add_argument("--speak-when-hidden", action="store_true",
+                        help="also speak when Orca is not the app in front (default: only while you are looking at Orca)")
     parser.add_argument("--verbose", action="store_true",
                         help="log every Orca event the plugin forwards, for troubleshooting")
     parser.add_argument("--voice", default="bf_emma", help="Kokoro voice")
@@ -76,6 +80,22 @@ def model_cache_dir() -> Path:
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Caches" / "orca-talkback"
     return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "orca-talkback"
+
+
+FRONT_APP_CHECK_SECONDS = 0.5
+
+
+def start_front_app_watch(daemon: VoiceDaemon) -> None:
+    """Stop playback soon after you switch away from Orca."""
+    def watch() -> None:
+        while True:
+            time.sleep(FRONT_APP_CHECK_SECONDS)
+            try:
+                daemon.enforce_front_app()
+            except Exception as error:  # never let the watcher die
+                log(f"[speak] front app check failed: {error!r}")
+
+    threading.Thread(target=watch, name="front-app-watch", daemon=True).start()
 
 
 def make_rewriter(args: argparse.Namespace) -> Rewriter | None:
@@ -163,7 +183,11 @@ def main(argv: list[str] | None = None) -> None:
         FocusRules(), speaker, last_assistant_message,
         lambda reply: spoken_sentences(reply, rewrite, log=log),
         log=log, verbose=args.verbose,
+        front_app_check=None if args.speak_when_hidden else orca_is_frontmost,
     )
+    if not args.speak_when_hidden:
+        log("[speak] only while Orca is the app in front (--speak-when-hidden to change)")
+        start_front_app_watch(daemon)
     server = make_server(daemon, port=args.port, log=log)
     print(f"orca-talkback listening on http://127.0.0.1:{args.port} (Ctrl+C to quit)", flush=True)
     signal.signal(signal.SIGTERM, raise_keyboard_interrupt)
