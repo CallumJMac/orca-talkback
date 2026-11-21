@@ -3,6 +3,9 @@
 # When Talkback is on for this session, ask the agent to end its reply with a hidden spoken line,
 # so the daemon can speak it at once instead of summarising the reply with another model.
 # When Talkback is muted, off, or not running, it prints nothing and the agent writes as usual.
+# Only Orca's chat view hides the spoken line; Claude Code's terminal prints it, so terminal
+# sessions (no ORCA_STRUCTURED_SESSION) get no instruction and the daemon speaks a cleaned-up reply.
+[ "${ORCA_STRUCTURED_SESSION:-}" = "1" ] || exit 0
 url="${TALKBACK_URL:-http://127.0.0.1:47823}"
 session_id=$(jq -r '.session_id // empty' 2>/dev/null) || exit 0
 [ -n "$session_id" ] || exit 0

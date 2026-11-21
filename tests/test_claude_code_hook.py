@@ -31,10 +31,13 @@ def daemon_url():
     server.server_close()
 
 
-def run_hook(url: str, session_id: str = "claude-session-1") -> str:
+def run_hook(url: str, session_id: str = "claude-session-1", orca_chat: bool = True) -> str:
+    environment = {"PATH": "/usr/bin:/bin:/opt/homebrew/bin", "TALKBACK_URL": url}
+    if orca_chat:
+        environment["ORCA_STRUCTURED_SESSION"] = "1"  # set by Orca for chat sessions, absent in terminals
     completed = subprocess.run(
         ["sh", str(HOOK)], input=json.dumps({"session_id": session_id, "prompt": "hi"}),
-        capture_output=True, text=True, timeout=10, env={"PATH": "/usr/bin:/bin:/opt/homebrew/bin", "TALKBACK_URL": url},
+        capture_output=True, text=True, timeout=10, env=environment,
     )
     assert completed.returncode == 0, completed.stderr
     return completed.stdout
@@ -56,3 +59,8 @@ def test_muted_session_gets_no_instruction(daemon_url):
 
 def test_daemon_down_means_reading_mode():
     assert run_hook("http://127.0.0.1:9") == ""
+
+
+def test_terminal_sessions_get_no_instruction_because_terminals_show_the_line(daemon_url):
+    _, url = daemon_url
+    assert run_hook(url, orca_chat=False) == ""

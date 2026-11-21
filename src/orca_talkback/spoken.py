@@ -6,9 +6,9 @@ from collections.abc import Iterator
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 MIN_SENTENCE_CHARS = 20
 MAX_FALLBACK_CHARS = 600
-# The line an agent in voice mode adds to the end of its reply, written as a markdown link
-# reference definition, which renderers drop: hidden in Orca's chat and in Claude Code's
-# terminal alike. The older HTML-comment form is still read; the terminal shows it, though.
+# The line an agent in an Orca chat adds to the end of its reply when voice mode is on, written
+# as a markdown link reference definition, which Orca's chat view hides. The older HTML-comment
+# form is still read. Claude Code's terminal prints both, so terminal sessions are not asked for one.
 SPOKEN_LINE = re.compile(
     r"^\[//\]:\s*#\s*\(\s*spoken:\s*(.*?)\s*\)\s*$|<!--\s*spoken:\s*(.*?)\s*-->",
     re.DOTALL | re.IGNORECASE | re.MULTILINE,
