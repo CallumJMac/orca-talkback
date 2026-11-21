@@ -165,10 +165,10 @@ The Talkback switch can also change how Claude Code *writes*. With the voice-mod
 
 | Talkback for the session | Claude Code writes | You hear | Time to first word |
 |---|---|---|---|
-| 🔊 On | Its normal reply, plus a hidden `<!-- spoken: ... -->` line at the end | That line, as the agent wrote it | under a second |
+| 🔊 On | Its normal reply, plus a hidden `[//]: # (spoken: ...)` line at the end | That line, as the agent wrote it | under a second |
 | 🔇 Muted | Its normal reply, for reading | Nothing | |
 
-The spoken line is an HTML comment, so Orca hides it. The agent that did the work says what it means, and nothing else sits between the reply and the voice. Without the hook, or when an agent forgets the line, a cleaned-up version of the reply is spoken instead: code, tables and links are dropped and long replies are cut at a sentence boundary.
+The spoken line is a markdown comment (a link reference definition), which renderers drop, so it is hidden both in Orca's chat and in Claude Code's terminal. The agent that did the work says what it means, and nothing else sits between the reply and the voice. Without the hook, or when an agent forgets the line, a cleaned-up version of the reply is spoken instead: code, tables and links are dropped and long replies are cut at a sentence boundary.
 
 To install the hook, add this to `~/.claude/settings.json` (it needs `jq` and `curl`, both built into recent macOS):
 

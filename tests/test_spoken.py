@@ -61,3 +61,17 @@ def test_reply_without_a_spoken_line_is_cleaned_up_and_spoken():
 def test_technical_reply_without_a_spoken_line_drops_code_and_tables():
     reply = "Pushed it for you just now.\n\n| Repo | Commit |\n|---|---|\n| orca-talkback | `486d9cb` |\n\n```sh\ngit push\n```"
     assert list(spoken_sentences(reply)) == ["Pushed it for you just now."]
+
+
+def test_markdown_comment_spoken_line_is_found():
+    reply = "Results now go to the sheet.\n\n[//]: # (spoken: The study now saves results to your sheet. Can you do one test run?)"
+    assert extract_spoken_line(reply) == "The study now saves results to your sheet. Can you do one test run?"
+
+
+def test_latest_spoken_line_wins_across_both_forms():
+    reply = "<!-- spoken: Old form line here. -->\nBody.\n\n[//]: # (spoken: New form line wins here.)"
+    assert extract_spoken_line(reply) == "New form line wins here."
+
+
+def test_cleanup_drops_markdown_comments():
+    assert strip_for_speech("Visible text here.\n\n[//]: # (spoken: hidden line)") == "Visible text here."

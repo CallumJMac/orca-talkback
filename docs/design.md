@@ -81,7 +81,7 @@ Replies that finished while their workspace was not focused are not stored and a
 
 ## Spoken text
 
-- **Spoken text:** the agent ends its reply with a hidden `<!-- spoken: ... -->` line when Talkback is on (a Claude Code `UserPromptSubmit` hook asks for it); the daemon speaks that line, or a cleaned-up version of the reply when there is none.
+- **Spoken text:** the agent ends its reply with a hidden `[//]: # (spoken: ...)` line when Talkback is on (a Claude Code `UserPromptSubmit` hook asks for it); the daemon speaks that line, or a cleaned-up version of the reply when there is none.
 - **Fallback:** with no spoken line, the reply is stripped of code blocks, tables, links and markdown and cut to 600 characters at a sentence boundary.
 - **Voice:** `bf_emma` at speed 1.1 by default, overridable with `--voice` and `--speed`.
 

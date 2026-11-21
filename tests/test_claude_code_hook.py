@@ -45,7 +45,7 @@ def test_voice_mode_on_adds_the_spoken_line_instruction(daemon_url):
     output = json.loads(run_hook(url))
     context = output["hookSpecificOutput"]["additionalContext"]
     assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
-    assert "<!-- spoken:" in context
+    assert "[//]: # (spoken:" in context
 
 
 def test_muted_session_gets_no_instruction(daemon_url):

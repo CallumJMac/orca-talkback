@@ -6,8 +6,14 @@ from collections.abc import Iterator
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 MIN_SENTENCE_CHARS = 20
 MAX_FALLBACK_CHARS = 600
-# The line an agent in voice mode adds to the end of its reply; hidden when the reply is rendered.
-SPOKEN_LINE = re.compile(r"<!--\s*spoken:\s*(.*?)\s*-->", re.DOTALL | re.IGNORECASE)
+# The line an agent in voice mode adds to the end of its reply, written as a markdown link
+# reference definition, which renderers drop: hidden in Orca's chat and in Claude Code's
+# terminal alike. The older HTML-comment form is still read; the terminal shows it, though.
+SPOKEN_LINE = re.compile(
+    r"^\[//\]:\s*#\s*\(\s*spoken:\s*(.*?)\s*\)\s*$|<!--\s*spoken:\s*(.*?)\s*-->",
+    re.DOTALL | re.IGNORECASE | re.MULTILINE,
+)
+MARKDOWN_COMMENT = re.compile(r"^\[//\]:\s*#\s*\(.*?\)\s*$", re.MULTILINE)
 
 
 class SentenceChunker:
@@ -47,13 +53,15 @@ def split_sentences(text: str) -> list[str]:
 
 def extract_spoken_line(reply: str) -> str | None:
     """The agent's own spoken version of its reply, if it wrote one (the last one wins)."""
-    matches = [match.strip() for match in SPOKEN_LINE.findall(reply) if match.strip()]
+    matches = [(markdown_form or html_form).strip() for markdown_form, html_form in SPOKEN_LINE.findall(reply)]
+    matches = [match for match in matches if match]
     return matches[-1] if matches else None
 
 
 def strip_for_speech(text: str) -> str:
     """Make a reply speakable when the agent wrote no spoken line: drop code, tables, links and markdown."""
     text = re.sub(r"<!--.*?-->", " ", text, flags=re.DOTALL)
+    text = MARKDOWN_COMMENT.sub(" ", text)
     text = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
     text = re.sub(r"^\|.*\|\s*$", " ", text, flags=re.MULTILINE)
     text = re.sub(r"`([^`]*)`", r"\1", text)
