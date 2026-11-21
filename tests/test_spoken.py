@@ -1,5 +1,7 @@
 from orca_talkback.spoken import (
     SentenceChunker,
+    extract_spoken_line,
+    needs_rewrite,
     split_sentences,
     spoken_sentences,
     strip_for_speech,
@@ -50,11 +52,11 @@ def test_strip_truncates_at_sentence_boundary():
 
 def test_spoken_sentences_streams_the_rewrite():
     rewrite = FakeRewriter(["I fixed the login form", " for you. Should I open", " a pull request?"])
-    assert list(spoken_sentences("written reply", rewrite)) == [
+    assert list(spoken_sentences("Updated `src/app.ts` for you.", rewrite)) == [
         "I fixed the login form for you.",
         "Should I open a pull request?",
     ]
-    assert "written reply" in rewrite.prompts[0]
+    assert "Updated `src/app.ts` for you." in rewrite.prompts[0]
 
 
 def test_spoken_sentences_falls_back_when_rewrite_fails():
@@ -75,6 +77,49 @@ def test_partial_stream_failure_still_speaks_the_buffered_text():
         raise RuntimeError("connection reset")
 
     logs: list[str] = []
-    sentences = list(spoken_sentences("written reply", broken_rewrite, log=logs.append))
+    sentences = list(spoken_sentences("Updated `src/app.ts` for you.", broken_rewrite, log=logs.append))
     assert sentences == ["I fixed the login form.", "And then I"]
     assert "rewrite failed" in logs[0]
+
+
+def test_hidden_spoken_line_is_spoken_without_a_rewrite():
+    rewrite = FakeRewriter(["should not be used. "])
+    reply = "## Done\n| a | b |\n\nPushed `abc123`.\n\n<!-- spoken: I pushed the fix. Want me to tag a release? -->"
+    assert list(spoken_sentences(reply, rewrite)) == ["I pushed the fix. Want me to tag a release?"]
+    assert rewrite.prompts == []
+
+
+def test_last_spoken_line_wins():
+    reply = "<!-- spoken: Old line here, ignore it. -->\nBody.\n<!-- spoken: The newest spoken line wins. -->"
+    assert extract_spoken_line(reply) == "The newest spoken line wins."
+
+
+def test_no_spoken_line_returns_none():
+    assert extract_spoken_line("Just a normal reply.") is None
+
+
+def test_short_plain_reply_is_spoken_directly_without_a_rewrite():
+    rewrite = FakeRewriter(["should not be used. "])
+    assert list(spoken_sentences("Here's a quick one for you. It should play right away.", rewrite)) == [
+        "Here's a quick one for you.", "It should play right away.",
+    ]
+    assert rewrite.prompts == []
+
+
+def test_long_or_technical_reply_still_uses_the_rewrite():
+    rewrite = FakeRewriter(["Summarised for speech. "])
+    technical = "Pushed it.\n\n| Repo | Commit |\n|---|---|\n| orca-talkback | `486d9cb` |"
+    assert list(spoken_sentences(technical, rewrite)) == ["Summarised for speech."]
+    assert len(rewrite.prompts) == 1
+
+
+def test_needs_rewrite_rules():
+    assert not needs_rewrite("A short plain sentence. And another one.")
+    assert needs_rewrite("See `src/app.ts` for details.")
+    assert needs_rewrite("- a bullet\n- another")
+    assert needs_rewrite("Open https://example.com to check.")
+    assert needs_rewrite("word " * 80)
+
+
+def test_cleanup_removes_html_comments():
+    assert strip_for_speech("Visible text here. <!-- hidden note -->") == "Visible text here."

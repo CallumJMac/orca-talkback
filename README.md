@@ -40,6 +40,7 @@ The last line is the next prompt being sent: playback stops the moment the agent
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
 - [Turning it on and off](#turning-it-on-and-off)
+- [Speaking or reading](#speaking-or-reading)
 - [Configuration](#configuration)
 - [Privacy](#privacy)
 - [Troubleshooting](#troubleshooting)
@@ -127,7 +128,7 @@ sequenceDiagram
 ```
 
 1. The **Talkback plugin** is a tiny Orca worker. It forwards workspace focus and agent status to the daemon on `127.0.0.1:47823`, in order, and re-sends focus before every status so a restarted daemon catches up.
-2. The **daemon** decides what to do with each event (table below). When a reply should be spoken, it reads the agent's full message through the Orca CLI and asks **Claude Haiku 5.5** to rewrite it as speech.
+2. The **daemon** decides what to do with each event (table below). When a reply should be spoken, it reads the agent's full message through the Orca CLI and picks the quickest good spoken version: the agent's own hidden spoken line (see [Speaking or reading](#speaking-or-reading)), the reply itself if it is short and plain, or otherwise a **Claude Haiku 5.5** rewrite.
 3. **Kokoro** synthesises the first sentence on its own, so you hear something while the rest is still streaming in. A newer reply replaces the current one; replies never queue up.
 4. While it speaks, **barge-in** listens: every sample it plays is fed to WebRTC AEC3 as the echo reference, so only *your* voice gets through to Silero VAD. It needs about 160 ms of your voice to trigger, then fades out over 30 ms.
 
@@ -158,6 +159,33 @@ The design document, with the full rules and trade-offs, is in [`docs/design.md`
 | Stop the current reply | Talk over it |
 
 Muting something that is speaking stops it at once, and your choices are remembered across restarts. Both commands can be bound to a shortcut in Orca's keyboard settings.
+
+---
+
+## Speaking or reading
+
+The Talkback switch can also change how Claude Code *writes*. With the voice-mode hook installed:
+
+| Talkback for the session | Claude Code writes | You hear | Time to first word |
+|---|---|---|---|
+| 🔊 On | Its normal reply, plus a hidden `<!-- spoken: ... -->` line at the end | That line, as the agent wrote it | about 0.4 s |
+| 🔇 Muted | Its normal reply, for reading | Nothing | |
+
+The spoken line is an HTML comment, so Orca hides it. No second model is involved: the agent that did the work says what it means. Without the hook, or when an agent forgets the line, short plain replies are spoken as written and only long or technical ones go to Haiku.
+
+To install the hook, add this to `~/.claude/settings.json` (it needs `jq` and `curl`, both built into recent macOS):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "/path/to/orca-talkback/integrations/claude-code/talkback-voice-mode.sh", "timeout": 2 }] }
+    ]
+  }
+}
+```
+
+On each prompt it asks the daemon whether Talkback is on for that session, and if so adds the spoken-line instruction as hidden context. If the daemon is not running, it adds nothing.
 
 ---
 

@@ -269,3 +269,36 @@ def test_front_app_check_is_off_when_not_configured():
     daemon.enforce_front_app()
     assert speaker.spoken == [["spoken: All tests pass."]]
     assert speaker.stops == ["focus changed", "agent started working"]
+
+
+def test_voice_mode_is_on_by_default():
+    daemon, _ = make_daemon()
+    assert daemon.voice_mode("claude-session-1") is True
+
+
+def test_voice_mode_is_off_for_a_muted_workspace():
+    daemon, _ = make_daemon()
+    daemon.handle_mutes({"muted": ["identity:chat"], "off": False})
+    daemon.handle_status({**status_payload("workspace-chat", "pane-a", "working"),
+                          "workspaceListId": "identity:chat", "sessionId": "claude-session-1"})
+    assert daemon.voice_mode("claude-session-1") is False
+    assert daemon.voice_mode("claude-session-2") is True
+
+
+def test_voice_mode_is_off_everywhere_when_talkback_is_off():
+    daemon, _ = make_daemon()
+    daemon.handle_mutes({"muted": [], "off": True})
+    assert daemon.voice_mode("claude-session-1") is False
+
+
+def test_mutes_payload_is_validated():
+    daemon, _ = make_daemon()
+    with pytest.raises(ValueError):
+        daemon.handle_mutes({"muted": "not-a-list", "off": False})
+
+
+def test_http_voice_mode(server_url):
+    base_url, _ = server_url
+    assert post(f"{base_url}/mutes", json.dumps({"muted": [], "off": True}).encode()) == 200
+    with urllib.request.urlopen(f"{base_url}/voice-mode?session=claude-session-1", timeout=5) as response:
+        assert json.loads(response.read()) == {"voice": False}

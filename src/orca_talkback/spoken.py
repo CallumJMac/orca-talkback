@@ -6,6 +6,11 @@ from collections.abc import Callable, Iterable, Iterator
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 MIN_SENTENCE_CHARS = 20
 MAX_FALLBACK_CHARS = 600
+# Replies at or under this length, with no markdown, code, paths or links, are spoken as written.
+MAX_PLAIN_REPLY_CHARS = 300
+# The line an agent in voice mode adds to the end of its reply; hidden when the reply is rendered.
+SPOKEN_LINE = re.compile(r"<!--\s*spoken:\s*(.*?)\s*-->", re.DOTALL | re.IGNORECASE)
+NEEDS_REWRITE = re.compile(r"```|`|^\s*\||^\s*([-*+]|\d+\.)\s|^\s*#|https?://|\w/\w", re.MULTILINE)
 
 # A rewriter takes the full prompt and streams back text fragments (see providers.py).
 Rewriter = Callable[[str], Iterable[str]]
@@ -55,8 +60,20 @@ def split_sentences(text: str) -> list[str]:
     return chunker.feed(text) + chunker.flush()
 
 
+def extract_spoken_line(reply: str) -> str | None:
+    """The agent's own spoken version of its reply, if it wrote one (the last one wins)."""
+    matches = [match.strip() for match in SPOKEN_LINE.findall(reply) if match.strip()]
+    return matches[-1] if matches else None
+
+
+def needs_rewrite(reply: str) -> bool:
+    """True when a reply would sound wrong read aloud: long, or containing markdown, code, paths or links."""
+    return len(reply.strip()) > MAX_PLAIN_REPLY_CHARS or bool(NEEDS_REWRITE.search(reply))
+
+
 def strip_for_speech(text: str) -> str:
     """Fallback cleanup when the rewrite is unavailable."""
+    text = re.sub(r"<!--.*?-->", " ", text, flags=re.DOTALL)
     text = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
     text = re.sub(r"^\|.*\|\s*$", " ", text, flags=re.MULTILINE)
     text = re.sub(r"`([^`]*)`", r"\1", text)
@@ -79,7 +96,19 @@ def spoken_sentences(
     rewrite: Rewriter | None,
     log: Callable[[str], None] = print,
 ) -> Iterator[str]:
-    """Yield spoken sentences: the model rewrite when available, stripped text otherwise."""
+    """Yield spoken sentences, cheapest source first.
+
+    1. The agent's own hidden spoken line, when it wrote one (voice mode).
+    2. The reply itself, when it is short and plain enough to read aloud.
+    3. The model rewrite, when one is configured; otherwise the cleaned-up reply.
+    """
+    spoken_line = extract_spoken_line(reply)
+    if spoken_line is not None:
+        yield from split_sentences(spoken_line)
+        return
+    if not needs_rewrite(reply):
+        yield from split_sentences(strip_for_speech(reply))
+        return
     if rewrite is not None:
         chunker = SentenceChunker()
         yielded_any = False

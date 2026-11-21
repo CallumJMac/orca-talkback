@@ -2,6 +2,7 @@
 
 import json
 import threading
+from urllib.parse import parse_qs, urlparse
 from collections.abc import Callable, Iterable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -23,6 +24,10 @@ class VoiceDaemon:
         self._rules = rules
         self._verbose = verbose
         self._front_app_check = front_app_check
+        # Voice mode: which workspaces the Talkback plugin muted, and each agent session's workspace ids.
+        self._muted_workspace_ids: set[str] = set()
+        self._off_everywhere = False
+        self._session_workspace_ids: dict[str, set[str]] = {}
         self._speaker = speaker
         self._lookup_message = lookup_message
         self._to_sentences = to_sentences
@@ -51,6 +56,12 @@ class VoiceDaemon:
         if not isinstance(pane_key, str) or not isinstance(state, str):
             raise ValueError("paneKey and state must be strings")
         with self._lock:
+            session_id = payload.get("sessionId")
+            if isinstance(session_id, str):
+                self._session_workspace_ids[session_id] = {
+                    workspace for workspace in (payload.get("workspaceId"), payload.get("workspaceListId"))
+                    if isinstance(workspace, str)
+                }
             if self._verbose:
                 self._log(
                     f"[event] status pane={pane_key} state={state} "
@@ -62,6 +73,22 @@ class VoiceDaemon:
             if action is not None:
                 self._log(f"[status] {pane_key} {state} -> {describe_action(action)}")
             self._apply(action)
+
+    def handle_mutes(self, payload: dict) -> None:
+        muted = payload.get("muted", [])
+        off = payload.get("off", False)
+        if not isinstance(muted, list) or not all(isinstance(item, str) for item in muted) or not isinstance(off, bool):
+            raise ValueError("muted must be a list of strings and off a boolean")
+        with self._lock:
+            self._muted_workspace_ids = set(muted)
+            self._off_everywhere = off
+
+    def voice_mode(self, session_id: str) -> bool:
+        """Whether an agent session should write a spoken line: Talkback on and its workspace not muted."""
+        with self._lock:
+            if self._off_everywhere:
+                return False
+            return not (self._session_workspace_ids.get(session_id, set()) & self._muted_workspace_ids)
 
     def handle_stop(self, payload: dict) -> None:
         self._log("[stop] requested")
@@ -111,14 +138,19 @@ def make_server(
         "/focus": daemon.handle_focus,
         "/status": daemon.handle_status,
         "/stop": daemon.handle_stop,
+        "/mutes": daemon.handle_mutes,
     }
 
     class Handler(BaseHTTPRequestHandler):
         timeout = 5
 
         def do_GET(self) -> None:
-            if self.path == "/health":
+            url = urlparse(self.path)
+            if url.path == "/health":
                 self._respond(200, {"ok": True, "playing": daemon.is_playing})
+            elif url.path == "/voice-mode":
+                session_id = parse_qs(url.query).get("session", [""])[0]
+                self._respond(200, {"voice": daemon.voice_mode(session_id)})
             else:
                 self._respond(404, {"error": "not found"})
 
