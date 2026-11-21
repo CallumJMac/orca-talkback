@@ -6,6 +6,7 @@
 </div>
 
 <p align="center">
+  <a href="https://github.com/CallumJMac/orca-talkback/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/CallumJMac/orca-talkback/ci.yml?branch=main&style=for-the-badge&label=tests" alt="Tests"></a>
   <img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?style=for-the-badge&logo=apple&logoColor=white" alt="macOS on Apple Silicon">
   <img src="https://img.shields.io/badge/python-3.11--3.14-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11 to 3.14">
   <a href="https://github.com/stablyai/orca"><img src="https://img.shields.io/badge/Orca-plugin-orange?style=for-the-badge" alt="Orca plugin"></a>
