@@ -99,20 +99,16 @@ def test_short_mic_chunks_are_skipped():
     assert references == []
 
 
-def test_gap_blanks_the_reverb_tail():
-    detector, _, _ = make_detector(required_chunks=1)
-    detector.begin_sentence(np.zeros(1600, dtype=np.float32), 16000)
-    for _ in range(5):  # 5 x 512 samples covers the 150 ms blanking window
-        detector.push_mic(mic_chunk(SPEECH))
-    assert detector.gap_has_speech() is False
-
-
-def test_gap_speech_after_blanking_interrupts():
-    detector, _, _ = make_detector(required_chunks=1)
-    detector.begin_sentence(np.zeros(1600, dtype=np.float32), 16000)
-    for _ in range(6):
-        detector.push_mic(mic_chunk(SPEECH))
-    assert detector.gap_has_speech() is True
+def test_add_reference_extends_alignment_without_resetting_inhibit():
+    detector, clock, references = make_detector()
+    detector.begin_sentence(np.arange(CHUNK_SAMPLES, dtype=np.float32), 16000)
+    clock.now += 0.6
+    detector.add_reference(np.full(CHUNK_SAMPLES, 7.0, dtype=np.float32), 16000)
+    detector.push_mic(mic_chunk(QUIET))
+    detector.push_mic(mic_chunk(QUIET))
+    detector.user_is_speaking()
+    assert len(references) == 2  # still past the inhibit window: add_reference did not restart it
+    assert references[1][0] == 7.0  # the second mic chunk lines up with the added audio
 
 
 def test_drain_mic_discards_queued_chunks():

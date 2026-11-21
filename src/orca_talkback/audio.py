@@ -1,10 +1,12 @@
 """Echo cancellation and barge-in detection, ported from Trelis Research voice-loop (voice_loop_mac.py, Apache-2.0).
 
-Timing invariants kept from the original:
+Timing invariants:
 - one AEC processor per reply, so the learned room response carries across sentences
 - one continuous reference buffer indexed by mic position, so mic and reference stay aligned
-- silence appended to the reference for every mic chunk heard between sentences
-- a 150 ms blanking window between sentences, so the reverb tail is not taken as speech
+- the reference is exactly the audio written to the speaker, sentences and the silence
+  between them alike; it is never padded from mic timing, because audio still in the
+  output buffer at a sentence boundary would then be mistaken for silence and every
+  later sentence would play ahead of its reference
 - a 0.5 s inhibit window at the start of every sentence
 """
 
@@ -17,7 +19,6 @@ import numpy as np
 SAMPLE_RATE = 16000
 CHUNK_SAMPLES = 512  # 32 ms at 16 kHz, required by Silero VAD
 AEC_FRAME_SAMPLES = 160  # 10 ms at 16 kHz
-GAP_BLANK_SAMPLES = int(0.15 * SAMPLE_RATE)
 SENTENCE_INHIBIT_SECONDS = 0.5
 
 AecProcess = Callable[[np.ndarray, np.ndarray], np.ndarray]
@@ -89,8 +90,9 @@ class BargeInDetector:
     """Decides, from echo-cancelled mic audio, whether the user is talking over playback.
 
     The input stream callback feeds chunks with push_mic() from any thread. The
-    playback thread calls begin_sentence() as each sentence starts playing, then
-    user_is_speaking() while it plays and gap_has_speech() between sentences.
+    playback thread calls begin_sentence() as each sentence starts playing,
+    add_reference() for any other audio it writes (such as silence while the next
+    sentence is synthesised), and user_is_speaking() between writes.
     """
 
     def __init__(
@@ -124,7 +126,7 @@ class BargeInDetector:
             pass
 
     def begin_sentence(self, samples: np.ndarray, sample_rate: int) -> None:
-        self._reference_parts.append(resample_to_16k(samples, sample_rate))
+        self.add_reference(samples, sample_rate)
         self._reset_vad()
         self._sentence_started_at = self._clock()
         self._consecutive_speech = 0
@@ -142,19 +144,9 @@ class BargeInDetector:
                 return True
         return False
 
-    def gap_has_speech(self) -> bool:
-        blanked_samples = 0
-        for mic_chunk in self._pending_mic_chunks():
-            silence = np.zeros(len(mic_chunk), dtype=np.float32)
-            self._reference_parts.append(silence)  # keeps the mic position aligned
-            self._mic_position += len(mic_chunk)
-            if blanked_samples < GAP_BLANK_SAMPLES:
-                self._consecutive_speech = 0
-                blanked_samples += len(mic_chunk)
-                continue
-            if self._is_speech(self._aec_process(mic_chunk, silence)):
-                return True
-        return False
+    def add_reference(self, samples: np.ndarray, sample_rate: int) -> None:
+        """Record audio just written to the speaker, so the echo canceller knows to expect it."""
+        self._reference_parts.append(resample_to_16k(samples, sample_rate))
 
     def _pending_mic_chunks(self, include_short: bool = False) -> Iterator[np.ndarray]:
         while True:

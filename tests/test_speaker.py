@@ -33,12 +33,16 @@ class FakeOutput:
     def total_samples(self) -> int:
         return sum(len(block) for block in self.blocks)
 
+    def sound_samples(self) -> int:
+        return sum(int(np.count_nonzero(block)) for block in self.blocks)
+
 
 class FakeDetector:
     def __init__(self, speaking_after_checks: int | None = None):
         self.speaking_after_checks = speaking_after_checks
         self.checks = 0
         self.sentences = 0
+        self.reference_samples = 0
 
     def push_mic(self, chunk):
         pass
@@ -48,13 +52,14 @@ class FakeDetector:
 
     def begin_sentence(self, samples, sample_rate):
         self.sentences += 1
+        self.reference_samples += len(samples)
+
+    def add_reference(self, samples, sample_rate):
+        self.reference_samples += len(samples)
 
     def user_is_speaking(self):
         self.checks += 1
         return self.speaking_after_checks is not None and self.checks > self.speaking_after_checks
-
-    def gap_has_speech(self):
-        return False
 
 
 class FakeInput:
@@ -107,7 +112,7 @@ def test_first_sentence_alone_then_pairs():
     speaker.speak(["First sentence here.", "Second sentence here.", "Third sentence here."])
     speaker.wait(5)
     assert synthesized == ["First sentence here.", "Second sentence here. Third sentence here."]
-    assert outputs[0].total_samples() == 2 * int(SAMPLE_RATE * 0.1)
+    assert outputs[0].sound_samples() == 2 * int(SAMPLE_RATE * 0.1)  # silence may fill the wait between items
     assert outputs[0].closed
 
 
@@ -208,3 +213,28 @@ def test_virtual_input_names_are_flagged():
     assert looks_virtual("ZoomAudioDevice")
     assert looks_virtual("Blackhole Input New")
     assert not looks_virtual("MacBook Pro Microphone")
+
+
+def test_echo_reference_matches_everything_written_even_while_waiting_for_synthesis():
+    """The echo canceller can only remove what it was told was played, sample for sample."""
+    detector = FakeDetector()
+    outputs: list[FakeOutput] = []
+    calls = []
+
+    def slow_second_synthesize(text):
+        calls.append(text)
+        if len(calls) == 2:
+            time.sleep(0.3)  # the speaker has to fill this wait with real silence
+        return np.ones(int(SAMPLE_RATE * 0.1), dtype=np.float32), SAMPLE_RATE
+
+    def open_output(sample_rate):
+        outputs.append(FakeOutput())
+        return outputs[-1]
+
+    speaker = Speaker(slow_second_synthesize, open_output, open_input=FakeInput,
+                      make_detector=lambda: detector, log=lambda line: None)
+    speaker.speak(["The first sentence is here.", "The second sentence is slow."])
+    speaker.wait(5)
+    written = outputs[0].total_samples()
+    assert written > 2 * int(SAMPLE_RATE * 0.1)  # silence was written during the wait
+    assert detector.reference_samples == written

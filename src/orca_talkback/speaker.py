@@ -11,6 +11,7 @@ from orca_talkback.audio import CHUNK_SAMPLES, SAMPLE_RATE
 
 WRITE_BLOCK_SAMPLES = 2048  # about 85 ms at 24 kHz between barge-in checks
 FADE_SECONDS = 0.03
+GAP_FILL_SECONDS = 0.02  # silence written while the next sentence is synthesised
 
 Synthesize = Callable[[str], tuple[np.ndarray, int]]
 
@@ -77,24 +78,21 @@ class Speaker:
         ).start()
         detector, input_stream = self._start_barge_in()
         output_stream = None
-        first_item = True
+        output_rate = 0
         try:
             while not cancel.is_set():
-                item = self._next_item(synthesized, cancel)
+                item = self._next_item(synthesized, cancel, output_stream, output_rate, detector)
                 if item is None:
                     break
                 samples, sample_rate = item
-                if detector is not None and not first_item and detector.gap_has_speech():
-                    self._barge_in(cancel)
-                    break
                 if output_stream is None:
                     output_stream = self._open_output(sample_rate)
                     output_stream.start()
+                    output_rate = sample_rate
                     if detector is not None:
                         detector.drain_mic()
                 if detector is not None:
                     detector.begin_sentence(samples, sample_rate)
-                first_item = False
                 if not self._write(output_stream, samples, sample_rate, detector, cancel):
                     break
         except Exception as error:
@@ -159,13 +157,28 @@ class Speaker:
         finally:
             put(None)
 
-    @staticmethod
-    def _next_item(synthesized: queue.Queue, cancel: threading.Event) -> Any:
+    def _next_item(self, synthesized: queue.Queue, cancel: threading.Event, output_stream: Any,
+                   output_rate: int, detector: Any) -> Any:
+        """Wait for the next synthesised item.
+
+        Once audio has started, the wait is filled with real silence written to the
+        speaker and to the echo reference alike, so the reference never drifts from
+        what was actually played, and barge-in keeps listening between sentences.
+        """
         while not cancel.is_set():
+            if output_stream is None:
+                try:
+                    return synthesized.get(timeout=0.1)
+                except queue.Empty:
+                    continue
             try:
-                return synthesized.get(timeout=0.1)
+                return synthesized.get_nowait()
             except queue.Empty:
-                continue
+                silence = np.zeros(int(output_rate * GAP_FILL_SECONDS), dtype=np.float32)
+                if detector is not None:
+                    detector.add_reference(silence, output_rate)
+                if not self._write(output_stream, silence, output_rate, detector, cancel):
+                    return None
         return None
 
     def _write(self, output_stream: Any, samples: np.ndarray, sample_rate: int, detector: Any, cancel: threading.Event) -> bool:
