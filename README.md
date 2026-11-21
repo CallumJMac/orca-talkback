@@ -168,7 +168,7 @@ The Talkback switch can also change how Claude Code *writes*. With the voice-mod
 
 | Talkback for the session | Claude Code writes | You hear | Time to first word |
 |---|---|---|---|
-| 🔊 On | Its normal reply, plus a hidden `<!-- spoken: ... -->` line at the end | That line, as the agent wrote it | about 0.4 s |
+| 🔊 On | Its normal reply, plus a hidden `<!-- spoken: ... -->` line at the end | That line, as the agent wrote it | under a second |
 | 🔇 Muted | Its normal reply, for reading | Nothing | |
 
 The spoken line is an HTML comment, so Orca hides it. No second model is involved: the agent that did the work says what it means. Without the hook, or when an agent forgets the line, short plain replies are spoken as written and only long or technical ones go to Haiku.
