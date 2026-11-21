@@ -3,7 +3,7 @@
 > The original design document, kept for the reasoning behind the rules and trade-offs. Names are updated; the [README](../README.md) is the user-facing reference.
 
 **Date:** 2026-11-21
-**Status:** Approved design, pending implementation plan
+**Status:** Implemented in 0.1. Kept as the record of the design decisions; the README is the user-facing reference.
 
 ## Goal
 
@@ -84,14 +84,14 @@ Replies that finished while their workspace was not focused are not stored and a
 
 - **Rewrite:** Claude Haiku 5.5 (Anthropic API by default, or Bedrock) turns the reply into one to three conversational sentences: no markdown, code, paths, URLs or dashes.
 - **Streaming:** the Bedrock streaming response is split into sentences, so synthesis of the first sentence starts before the rewrite finishes.
-- **Fallback:** if Bedrock fails, the reply is stripped of code blocks, tables, links and markdown and cut to 600 characters at a sentence boundary.
+- **Fallback:** if the rewrite provider fails, the reply is stripped of code blocks, tables, links and markdown and cut to 600 characters at a sentence boundary.
 - **Voice:** `bf_emma` at speed 1.1 by default, overridable with `--voice` and `--speed`.
 
 ## Barge-in and echo
 
 - **Mic timing:** the mic stream (16 kHz mono) is open only while playback is active.
 - **Echo cancellation:** each playback block is also fed to AEC3 as the reverse stream, so the cancellation reference matches exactly what the speakers emit. This reuses Trelis voice-loop's AEC3 setup, including its buffer sizes, which are known to keep AEC timing stable.
-- **Threshold:** the speech threshold and the 200 ms window are CLI flags (`--barge-in-ms`, `--vad-threshold`) so they can be tuned without code changes.
+- **Threshold:** the speech threshold and the 160 ms window are CLI flags (`--barge-in-ms`, `--vad-threshold`) so they can be tuned without code changes.
 - **Known limitation:** Wispr Flow records from its own mic without AEC. If the user starts dictating at the same moment as the barge-in, Wispr may capture up to about 300 ms of the tail of the speech. A fast fade keeps this rare. It is accepted for v1.
 
 ## Error handling
