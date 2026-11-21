@@ -2,10 +2,15 @@ import threading
 import time
 
 import numpy as np
-
 import pytest
 
-from orca_talkback.speaker import FADE_SECONDS, Speaker, looks_virtual, resolve_input_device
+from orca_talkback.speaker import (
+    FADE_SECONDS,
+    Speaker,
+    first_real_input,
+    looks_virtual,
+    resolve_input_device,
+)
 
 SAMPLE_RATE = 24000
 
@@ -238,3 +243,12 @@ def test_echo_reference_matches_everything_written_even_while_waiting_for_synthe
     written = outputs[0].total_samples()
     assert written > 2 * int(SAMPLE_RATE * 0.1)  # silence was written during the wait
     assert detector.reference_samples == written
+
+
+def test_first_real_microphone_is_chosen_over_virtual_devices():
+    assert first_real_input(lambda: FAKE_DEVICES) == (2, "MacBook Pro Microphone")
+
+
+def test_no_real_microphone_returns_none():
+    virtual_only = [{"name": "BlackHole 16ch", "max_input_channels": 16}, {"name": "ZoomAudioDevice", "max_input_channels": 2}]
+    assert first_real_input(lambda: virtual_only) is None

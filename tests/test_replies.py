@@ -3,7 +3,6 @@ import subprocess
 
 from orca_talkback.replies import last_assistant_message
 
-
 EMPTY_READ = json.dumps({"ok": True, "result": {"entries": []}})
 
 

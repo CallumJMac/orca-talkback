@@ -47,3 +47,9 @@ packages = ["src/orca_talkback"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-p no:anyio"
+
+[tool.ruff.lint]
+extend-ignore = [
+    "BLE001",  # broad excepts are deliberate: a misbehaving audio device or Orca must never stop the daemon
+    "TRY004",  # ValueError for bad request payloads is what the HTTP handler turns into a 400
+]

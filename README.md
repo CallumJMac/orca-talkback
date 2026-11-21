@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <sub><strong>Status:</strong> 0.1, early. Tested on macOS (Apple Silicon) with Orca 1.4.265 and Claude Code agents. 102 daemon tests and 14 plugin tests.</sub>
+  <sub><strong>Status:</strong> 0.1, early. Tested on macOS (Apple Silicon) with Orca 1.4.265 and Claude Code agents. 113 daemon tests and 14 plugin tests.</sub>
 </p>
 
 ---
@@ -52,51 +52,37 @@ The last line is the next prompt being sent: playback stops the moment the agent
 
 ## Quick start
 
-**You need:** macOS on Apple Silicon, [Homebrew](https://brew.sh), [uv](https://docs.astral.sh/uv/), and [Orca](https://github.com/stablyai/orca) 1.4.248 or newer. No API keys: everything runs on your Mac.
+**You need:** macOS on Apple Silicon, [uv](https://docs.astral.sh/uv/) and [Orca](https://github.com/stablyai/orca) 1.4.248 or newer. No API keys and no Homebrew: everything runs on your Mac.
 
-### 1. Install
+### 1. Install and set up
 
 ```bash
-brew install portaudio espeak-ng
-git clone https://github.com/CallumJMac/orca-talkback.git
-cd orca-talkback
-uv sync
+uv tool install git+https://github.com/CallumJMac/orca-talkback
+orca-talkback setup
 ```
 
-`uv sync` downloads PyTorch (for voice detection), so the first install takes a few minutes.
+`setup` installs the Claude Code voice-mode hook (see [Speaking or reading](#speaking-or-reading)), downloads the Kokoro voice (about 340 MB), checks your microphone and checks the Orca plugin. The first install also downloads PyTorch for voice detection, so it takes a few minutes.
 
 ### 2. Add the Talkback plugin to Orca
 
-The plugin lives in its own repo, [orca-talkback-plugin](https://github.com/CallumJMac/orca-talkback-plugin). Install it from a terminal (the `orca` CLI ships inside the app; if it is not on your PATH, use `/Applications/Orca.app/Contents/Resources/bin/orca`):
+In Orca, open **Settings, Plugins**, add the community marketplace (`https://github.com/stablyai/orca-community-plugins.git`, ref `main`) and install **Talkback**. Or from a terminal (the `orca` CLI ships inside the app; if it is not on your PATH, use `/Applications/Orca.app/Contents/Resources/bin/orca`):
 
 ```bash
 orca plugin install CallumJMac/orca-talkback-plugin
 ```
 
-Orca lists the access the plugin asks for (read workspace focus and agent status) and prints a `Fingerprint: ap1-...` line. Approve exactly that:
+Orca lists the access the plugin asks for (read workspace focus and agent status) and prints a `Fingerprint: ap1-...` line; re-run the command with `--approve` and that fingerprint.
+
+### 3. Run it
 
 ```bash
-orca plugin install CallumJMac/orca-talkback-plugin --approve ap1-<fingerprint Orca printed>
+orca-talkback
 ```
 
-It is also submitted to Orca's community catalog; once listed, you can install **Talkback** from **Settings, Plugins** after adding the community marketplace (`https://github.com/stablyai/orca-community-plugins.git`, ref `main`).
-
-### 3. Run the daemon
-
-```bash
-uv run orca-talkback
-```
-
-The first run downloads the Kokoro voice model (about 340 MB) to `~/Library/Caches/orca-talkback`. When it is ready you will see:
-
-```text
-orca-talkback listening on http://127.0.0.1:47823 (Ctrl+C to quit)
-```
-
-Check it from another terminal with `curl -s 127.0.0.1:47823/health`, then ask a Claude Code agent something in Orca and listen.
+When it is ready you will see `orca-talkback listening on http://127.0.0.1:47823`. Ask a Claude Code agent something in an Orca chat and listen.
 
 > [!NOTE]
-> The first time it opens the microphone, macOS asks for permission for your terminal app. Barge-in needs it; playback works without it.
+> The first time it opens the microphone, macOS asks for permission for your terminal app. Barge-in needs it; playback works without it. If your default input is a virtual device (Zoom, Teams, BlackHole), orca-talkback picks your real microphone instead.
 
 ---
 
@@ -170,13 +156,13 @@ The Talkback switch can also change how Claude Code *writes* in Orca chats. With
 
 The spoken line is a markdown comment (a link reference definition), which Orca's chat view hides. Claude Code's terminal would print it, so the hook only asks for it in Orca chats; agents running in a terminal are spoken as cleaned-up text instead. The agent that did the work says what it means, and nothing else sits between the reply and the voice. Without the hook, or when an agent forgets the line, a cleaned-up version of the reply is spoken instead: code, tables and links are dropped and long replies are cut at a sentence boundary.
 
-To install the hook, add this to `~/.claude/settings.json` (it needs `jq` and `curl`, both built into recent macOS):
+`orca-talkback setup` installs the hook for you. To do it by hand instead, copy `src/orca_talkback/hooks/talkback-voice-mode.sh` somewhere stable and add it to `~/.claude/settings.json` (it needs `jq` and `curl`, both built into recent macOS):
 
 ```json
 {
   "hooks": {
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "/path/to/orca-talkback/integrations/claude-code/talkback-voice-mode.sh", "timeout": 2 }] }
+      { "hooks": [{ "type": "command", "command": "/path/to/talkback-voice-mode.sh", "timeout": 2 }] }
     ]
   }
 }
@@ -199,7 +185,7 @@ uv run orca-talkback --help
 | `--no-barge-in` | barge-in on | Turn off talking over it |
 | `--barge-in-ms` | `160` | Continuous speech needed to interrupt. Raise it if it stops too easily |
 | `--vad-threshold` | `0.8` | Speech probability threshold. Lower it if it never stops |
-| `--input-device` | system input | Microphone for barge-in, matched by name, for example `"MacBook Pro Microphone"` |
+| `--input-device` | your real microphone | Microphone for barge-in, matched by name, for example `"MacBook Pro Microphone"`. By default it uses the system input, skipping virtual devices |
 | `--speak-when-hidden` | off | Also speak while another app is in front (the workspace rule still applies) |
 | `--verbose` | off | Log every event the plugin forwards, with the focused workspace, for troubleshooting |
 | `--port` | `47823` | Leave as is: the plugin hard-codes this port (`DAEMON_URL` in the plugin's [`src/worker.ts`](https://github.com/CallumJMac/orca-talkback-plugin/blob/main/src/worker.ts)) |
@@ -261,8 +247,10 @@ Kokoro scored the highest naturalness of the 56 models on Hugging Face's [Open T
 ## Development
 
 ```bash
+git clone https://github.com/CallumJMac/orca-talkback.git && cd orca-talkback
 uv sync
 uv run pytest -q          # daemon tests, no audio hardware needed
+uv run orca-talkback      # run from the checkout
 ```
 
 The plugin's code and tests are in [orca-talkback-plugin](https://github.com/CallumJMac/orca-talkback-plugin).

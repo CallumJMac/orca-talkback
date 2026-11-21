@@ -4,15 +4,20 @@ import argparse
 import math
 import os
 import signal
-import subprocess
 import sys
 import threading
 import time
-from functools import partial
 import urllib.request
+from functools import partial
 from pathlib import Path
 
-from orca_talkback.audio import CHUNK_SAMPLES, SAMPLE_RATE, BargeInDetector, make_aec_processor, make_speech_probability
+from orca_talkback.audio import (
+    CHUNK_SAMPLES,
+    SAMPLE_RATE,
+    BargeInDetector,
+    make_aec_processor,
+    make_speech_probability,
+)
 from orca_talkback.frontmost import orca_is_frontmost
 from orca_talkback.replies import last_assistant_message
 from orca_talkback.rules import FocusRules
@@ -20,6 +25,7 @@ from orca_talkback.server import VoiceDaemon, make_server
 from orca_talkback.speaker import (
     Speaker,
     default_input_name,
+    first_real_input,
     looks_virtual,
     open_sounddevice_input,
     open_sounddevice_output,
@@ -39,7 +45,10 @@ def raise_keyboard_interrupt(signal_number: int, frame: object) -> None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="orca-talkback", description="Hear your Orca coding agents talk back.")
+    parser = argparse.ArgumentParser(
+        prog="orca-talkback", description="Hear your Orca coding agents talk back.",
+        epilog="Run `orca-talkback setup` once first to install the Claude Code hook and the voice.",
+    )
     parser.add_argument("--port", type=int, default=47823)
     parser.add_argument("--speak-when-hidden", action="store_true",
                         help="also speak when Orca is not the app in front (default: only while you are looking at Orca)")
@@ -90,19 +99,19 @@ def choose_microphone(requested_name: str | None):
         log(f"[audio] barge-in microphone: {device_name}")
         return partial(open_sounddevice_input, device=index)
     device_name = default_input_name()
-    log(f"[audio] barge-in microphone: {device_name} (system default)")
-    if looks_virtual(device_name):
-        log(f"[audio] warning: {device_name!r} looks like a virtual device, so barge-in may never hear you; "
-            "pass --input-device \"MacBook Pro Microphone\" (or your mic's name)")
-    return open_sounddevice_input
+    if not looks_virtual(device_name):
+        log(f"[audio] barge-in microphone: {device_name} (system default)")
+        return open_sounddevice_input
+    real_input = first_real_input()
+    if real_input is None:
+        log(f"[audio] warning: the only microphones are virtual ({device_name!r}), so barge-in may never hear you")
+        return open_sounddevice_input
+    index, real_name = real_input
+    log(f"[audio] barge-in microphone: {real_name} (the system default, {device_name!r}, is a virtual device)")
+    return partial(open_sounddevice_input, device=index)
 
 
 def load_kokoro():
-    try:
-        prefix = subprocess.check_output(["brew", "--prefix", "espeak-ng"], text=True).strip()
-        os.environ.setdefault("PHONEMIZER_ESPEAK_LIBRARY", f"{prefix}/lib/libespeak-ng.dylib")
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        pass
     from kokoro_onnx import Kokoro
 
     cache_dir = model_cache_dir()
@@ -119,7 +128,13 @@ def load_kokoro():
 
 
 def main(argv: list[str] | None = None) -> None:
-    args = parse_args(argv)
+    arguments = sys.argv[1:] if argv is None else argv
+    if arguments[:1] == ["setup"]:
+        from orca_talkback.setup_command import run_setup
+
+        run_setup()
+        return
+    args = parse_args(arguments)
     print("Loading Kokoro TTS...", flush=True)
     kokoro = load_kokoro()
 

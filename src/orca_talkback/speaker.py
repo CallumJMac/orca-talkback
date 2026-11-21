@@ -234,6 +234,18 @@ def resolve_input_device(name: str, query_devices: Callable[[], Any] | None = No
     raise ValueError(f"no input device matching {name!r}; available inputs: {available}")
 
 
+def first_real_input(query_devices: Callable[[], Any] | None = None) -> tuple[int, str] | None:
+    """The first input device that is not a loopback or meeting-app device, if any."""
+    if query_devices is None:
+        import sounddevice
+
+        query_devices = sounddevice.query_devices
+    for index, device in enumerate(query_devices()):
+        if device["max_input_channels"] > 0 and not looks_virtual(device["name"]):
+            return index, device["name"]
+    return None
+
+
 def default_input_name() -> str:
     import sounddevice
 

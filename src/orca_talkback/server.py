@@ -2,10 +2,10 @@
 
 import json
 import threading
-from urllib.parse import parse_qs, urlparse
 from collections.abc import Callable, Iterable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from orca_talkback.rules import Action, FocusRules, Speak, Stop
 

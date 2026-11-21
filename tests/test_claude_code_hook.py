@@ -8,7 +8,7 @@ import pytest
 from orca_talkback.rules import FocusRules
 from orca_talkback.server import VoiceDaemon, make_server
 
-HOOK = Path(__file__).resolve().parent.parent / "integrations" / "claude-code" / "talkback-voice-mode.sh"
+HOOK = Path(__file__).resolve().parent.parent / "src" / "orca_talkback" / "hooks" / "talkback-voice-mode.sh"
 
 
 class SilentSpeaker:
@@ -37,7 +37,7 @@ def run_hook(url: str, session_id: str = "claude-session-1", orca_chat: bool = T
         environment["ORCA_STRUCTURED_SESSION"] = "1"  # set by Orca for chat sessions, absent in terminals
     completed = subprocess.run(
         ["sh", str(HOOK)], input=json.dumps({"session_id": session_id, "prompt": "hi"}),
-        capture_output=True, text=True, timeout=10, env=environment,
+        capture_output=True, text=True, timeout=10, env=environment, check=False,
     )
     assert completed.returncode == 0, completed.stderr
     return completed.stdout

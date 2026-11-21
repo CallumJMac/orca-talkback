@@ -16,9 +16,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install portaudio
-        run: brew install portaudio
       - name: Install dependencies
         run: uv sync
+      - name: Lint
+        run: uvx ruff check src tests
       - name: Run tests
         run: uv run pytest -q
