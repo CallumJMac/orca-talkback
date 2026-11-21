@@ -39,6 +39,7 @@ The last line is the next prompt being sent: playback stops the moment the agent
 
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
+- [Turning it on and off](#turning-it-on-and-off)
 - [Configuration](#configuration)
 - [Privacy](#privacy)
 - [Troubleshooting](#troubleshooting)
@@ -145,6 +146,18 @@ It only speaks while you are looking at the agent: **Orca must be the app in fro
 | You start talking | Stop |
 
 The design document, with the full rules and trade-offs, is in [`docs/design.md`](docs/design.md).
+
+---
+
+## Turning it on and off
+
+| To | Do |
+|---|---|
+| Mute or unmute the workspace or chat on screen | Click **🔊 Talkback** in Orca's status bar, or run **Talkback: Toggle for this workspace** from the command palette |
+| Mute everything | Run **Talkback: Toggle everywhere** (the status bar reads **🔇 Talkback off**) |
+| Stop the current reply | Talk over it |
+
+Muting something that is speaking stops it at once, and your choices are remembered across restarts. Both commands can be bound to a shortcut in Orca's keyboard settings.
 
 ---
 
