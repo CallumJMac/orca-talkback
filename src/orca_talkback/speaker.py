@@ -205,9 +205,61 @@ class Speaker:
         cancel.set()
 
 
+class UpsampledOutput:
+    """Wraps an output stream that runs at an integer multiple of the audio's sample rate.
+
+    Each written block is upsampled with a streaming windowed-sinc FIR, so block edges
+    join seamlessly. The filter delays the audio by `delay` output samples (about 0.5 ms).
+    """
+
+    def __init__(self, stream: Any, factor: int, zero_crossings: int = 12) -> None:
+        self._stream = stream
+        self._factor = factor
+        offsets = np.arange(-zero_crossings * factor, zero_crossings * factor + 1)
+        # sinc(n / factor) already restores the energy lost to zero-stuffing, so no extra gain.
+        self._taps = (np.sinc(offsets / factor) * np.kaiser(len(offsets), 8.6)).astype(np.float32)
+        self._history = np.zeros(len(self._taps) - 1, dtype=np.float32)
+
+    @property
+    def delay(self) -> int:
+        return (len(self._taps) - 1) // 2
+
+    def start(self) -> None:
+        self._stream.start()
+
+    def stop(self) -> None:
+        self._stream.stop()
+
+    def close(self) -> None:
+        self._stream.close()
+
+    def write(self, frames: np.ndarray) -> Any:
+        samples = np.asarray(frames, dtype=np.float32).reshape(-1)
+        stuffed = np.zeros(len(samples) * self._factor, dtype=np.float32)
+        stuffed[:: self._factor] = samples
+        padded = np.concatenate([self._history, stuffed])
+        self._history = padded[len(stuffed):]
+        upsampled = np.convolve(padded, self._taps, mode="valid")
+        return self._stream.write(upsampled.reshape(-1, 1))
+
+
 def open_sounddevice_output(sample_rate: int) -> Any:
+    """Open the default output.
+
+    Kokoro speaks at 24 kHz but Mac speakers run at 48 kHz. Handing PortAudio the 24 kHz
+    stream makes it convert the rate itself, which crackles and echoes on some Macs. When
+    the device rate is a whole multiple of the audio's, open the device natively and
+    upsample here instead.
+    """
     import sounddevice
 
+    try:
+        device_rate = int(sounddevice.query_devices(kind="output")["default_samplerate"])
+    except Exception:
+        device_rate = sample_rate
+    if device_rate > sample_rate and device_rate % sample_rate == 0:
+        stream = sounddevice.OutputStream(samplerate=device_rate, channels=1, dtype="float32")
+        return UpsampledOutput(stream, device_rate // sample_rate)
     return sounddevice.OutputStream(samplerate=sample_rate, channels=1, dtype="float32")
 
 
