@@ -47,7 +47,8 @@ def raise_keyboard_interrupt(signal_number: int, frame: object) -> None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="orca-talkback", description="Hear your Orca coding agents talk back.",
-        epilog="Run `orca-talkback setup` once first to install the Claude Code hook and the voice.",
+        epilog="Run `orca-talkback setup` once first to install the Claude Code hook and the voice. "
+               "To keep it running in the background, see `orca-talkback service`.",
     )
     parser.add_argument("--port", type=int, default=47823)
     parser.add_argument("--speak-when-hidden", action="store_true",
@@ -130,10 +131,14 @@ def load_kokoro():
 def main(argv: list[str] | None = None) -> None:
     arguments = sys.argv[1:] if argv is None else argv
     if arguments[:1] == ["setup"]:
-        from orca_talkback.setup_command import run_setup
+        from orca_talkback.setup_command import parse_setup_args, run_setup
 
-        run_setup()
+        run_setup(parse_setup_args(arguments[1:]).launch_at_login)
         return
+    if arguments[:1] == ["service"]:
+        from orca_talkback.service import run_service
+
+        sys.exit(run_service(arguments[1:]))
     args = parse_args(arguments)
     print("Loading Kokoro TTS...", flush=True)
     kokoro = load_kokoro()

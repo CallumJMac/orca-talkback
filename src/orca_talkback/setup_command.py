@@ -1,8 +1,11 @@
 """`orca-talkback setup`: install the Claude Code voice-mode hook, fetch the voice, check the mic and plugin."""
 
+import argparse
 import json
 import shutil
 import subprocess
+import sys
+from collections.abc import Callable
 from importlib import resources
 from pathlib import Path
 
@@ -86,7 +89,52 @@ def check_plugin() -> None:
         print("  then re-run it with the --approve fingerprint Orca prints.")
 
 
-def run_setup() -> None:
+def parse_setup_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="orca-talkback setup", description="One-time setup for orca-talkback.")
+    parser.add_argument(
+        "--launch-at-login", action=argparse.BooleanOptionalAction, default=None,
+        help="run the daemon in the background and start it at login (macOS launchd agent); "
+             "without this flag, setup asks when run in a terminal",
+    )
+    return parser.parse_args(argv)
+
+
+def offer_launch_at_login(
+    choice: bool | None,
+    *,
+    interactive: bool,
+    ask: Callable[[str], str] = input,
+    plist_path: Path | None = None,
+) -> bool:
+    """Install the launch agent if wanted. `choice` is the flag: True, False, or None to ask.
+
+    Returns whether the agent is now set up. A failure here is reported but never fails setup.
+    """
+    from orca_talkback import service
+
+    plist_path = plist_path or service.PLIST_PATH
+    if sys.platform != "darwin" or choice is False:
+        return False
+    if plist_path.exists():
+        print("  Launch at login: already set up (see: orca-talkback service status)")
+        return True
+    if choice is None:
+        if not interactive:
+            print("  Launch at login: not set up. To run it in the background: orca-talkback service install")
+            return False
+        answer = ask("  Start orca-talkback automatically at login? [Y/n] ").strip().lower()
+        if answer not in ("", "y", "yes"):
+            print("  Launch at login: skipped. You can add it later with: orca-talkback service install")
+            return False
+    try:
+        print("  Launch at login: " + service.install([]).replace("\n", "\n  "))
+    except service.ServiceError as error:
+        print(f"  Launch at login: could not set up ({error}). Try later with: orca-talkback service install")
+        return False
+    return True
+
+
+def run_setup(launch_at_login: bool | None = None) -> None:
     from orca_talkback.__main__ import load_kokoro
 
     print("Setting up orca-talkback")
@@ -98,4 +146,8 @@ def run_setup() -> None:
     print("  Voice: ready")
     check_microphone()
     check_plugin()
-    print("\nDone. Start it with: orca-talkback")
+    background = offer_launch_at_login(launch_at_login, interactive=sys.stdin.isatty())
+    if background:
+        print("\nDone. orca-talkback runs in the background and starts at every login.")
+    else:
+        print("\nDone. Start it with: orca-talkback")
