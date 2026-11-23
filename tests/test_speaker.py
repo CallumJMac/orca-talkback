@@ -252,3 +252,77 @@ def test_first_real_microphone_is_chosen_over_virtual_devices():
 def test_no_real_microphone_returns_none():
     virtual_only = [{"name": "BlackHole 16ch", "max_input_channels": 16}, {"name": "ZoomAudioDevice", "max_input_channels": 2}]
     assert first_real_input(lambda: virtual_only) is None
+
+
+def test_audio_devices_are_refreshed_before_each_reply_so_reconnected_headsets_work():
+    events: list[str] = []
+
+    def open_output(sample_rate):
+        events.append("open output")
+        return FakeOutput()
+
+    def synthesize(text):
+        return np.ones(SAMPLE_RATE // 20, dtype=np.float32), SAMPLE_RATE
+
+    speaker = Speaker(synthesize, open_output, refresh_devices=lambda: events.append("refresh"), log=lambda line: None)
+    speaker.speak(["One."])
+    speaker.wait(2)
+    speaker.speak(["Two."])
+    speaker.wait(2)
+    assert events == ["refresh", "open output", "refresh", "open output"]
+
+
+def test_a_failed_device_refresh_is_logged_and_the_reply_still_plays():
+    outputs: list[FakeOutput] = []
+    logs: list[str] = []
+
+    def open_output(sample_rate):
+        outputs.append(FakeOutput())
+        return outputs[-1]
+
+    def broken_refresh():
+        raise RuntimeError("PortAudio busy")
+
+    speaker = Speaker(lambda text: (np.ones(100, dtype=np.float32), SAMPLE_RATE), open_output,
+                      refresh_devices=broken_refresh, log=logs.append)
+    speaker.speak(["Hello."])
+    speaker.wait(2)
+    assert outputs and outputs[0].total_samples() > 0
+    assert any("device refresh failed" in line for line in logs)
+
+
+def test_devices_are_not_refreshed_while_the_previous_reply_is_still_playing():
+    refreshes: list[int] = []
+    release = threading.Event()
+
+    class StuckOutput(FakeOutput):
+        def write(self, block):
+            release.wait(5)
+
+    speaker = Speaker(lambda text: (np.ones(SAMPLE_RATE, dtype=np.float32), SAMPLE_RATE),
+                      lambda sample_rate: StuckOutput(), refresh_devices=lambda: refreshes.append(1), log=lambda line: None)
+    speaker.speak(["Stuck."])
+    time.sleep(0.1)
+    speaker.speak(["Next."])  # the stuck reply ignores cancel for more than the 2 s join
+    release.set()
+    speaker.wait(5)
+    assert refreshes == [1]
+
+
+def test_a_microphone_chosen_by_name_is_looked_up_again_on_each_open():
+    from orca_talkback.speaker import open_named_input
+
+    device_lists = [
+        [{"name": "MacBook Pro Microphone", "max_input_channels": 1}, {"name": "External Microphone", "max_input_channels": 1}],
+        [{"name": "External Microphone", "max_input_channels": 1}],
+    ]
+    opened: list[int] = []
+
+    def open_input(on_chunk, device=None):
+        opened.append(device)
+        return FakeInput(on_chunk)
+
+    for devices in device_lists:
+        open_named_input(lambda chunk: None, name="External Microphone",
+                         query_devices=lambda devices=devices: devices, open_input=open_input)
+    assert opened == [1, 0]

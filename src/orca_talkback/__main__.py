@@ -26,8 +26,10 @@ from orca_talkback.speaker import (
     default_input_name,
     first_real_input,
     looks_virtual,
+    open_named_input,
     open_sounddevice_input,
     open_sounddevice_output,
+    refresh_sounddevice_devices,
     resolve_input_device,
 )
 from orca_talkback.spoken import spoken_sentences
@@ -95,9 +97,9 @@ def start_visibility_watch(daemon: VoiceDaemon) -> None:
 def choose_microphone(requested_name: str | None):
     """Pick the barge-in mic and say which one, since a virtual default input silently breaks barge-in."""
     if requested_name:
-        index, device_name = resolve_input_device(requested_name)
+        _, device_name = resolve_input_device(requested_name)
         log(f"[audio] barge-in microphone: {device_name}")
-        return partial(open_sounddevice_input, device=index)
+        return partial(open_named_input, name=device_name)
     device_name = default_input_name()
     if not looks_virtual(device_name):
         log(f"[audio] barge-in microphone: {device_name} (system default)")
@@ -106,9 +108,9 @@ def choose_microphone(requested_name: str | None):
     if real_input is None:
         log(f"[audio] warning: the only microphones are virtual ({device_name!r}), so barge-in may never hear you")
         return open_sounddevice_input
-    index, real_name = real_input
+    _, real_name = real_input
     log(f"[audio] barge-in microphone: {real_name} (the system default, {device_name!r}, is a virtual device)")
-    return partial(open_sounddevice_input, device=index)
+    return partial(open_named_input, name=real_name)
 
 
 def load_kokoro():
@@ -158,7 +160,7 @@ def main(argv: list[str] | None = None) -> None:
     speaker = Speaker(
         synthesize, open_sounddevice_output,
         open_input=choose_microphone(args.input_device) if args.barge_in else None,
-        make_detector=detector_factory, log=log,
+        make_detector=detector_factory, refresh_devices=refresh_sounddevice_devices, log=log,
     )
     daemon = VoiceDaemon(
         FocusRules(), speaker, last_assistant_message,

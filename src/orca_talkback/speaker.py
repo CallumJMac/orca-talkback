@@ -22,6 +22,8 @@ class Speaker:
     open_output(sample_rate) and open_input(on_chunk) return stream objects with
     start(), stop() and close(); output streams also take write(frames).
     make_detector() returns a BargeInDetector for each reply.
+    refresh_devices() rereads the audio device list before each reply, so a headset that
+    reconnected since the last one still opens.
     """
 
     def __init__(
@@ -30,12 +32,14 @@ class Speaker:
         open_output: Callable[[int], Any],
         open_input: Callable[[Callable[[np.ndarray], None]], Any] | None = None,
         make_detector: Callable[[], Any] | None = None,
+        refresh_devices: Callable[[], None] | None = None,
         log: Callable[[str], None] = print,
     ) -> None:
         self._synthesize = synthesize
         self._open_output = open_output
         self._open_input = open_input
         self._make_detector = make_detector
+        self._refresh_devices = refresh_devices
         self._log = log
         self._lock = threading.Lock()
         self._cancel = threading.Event()
@@ -48,6 +52,7 @@ class Speaker:
     def speak(self, sentences: Iterable[str]) -> None:
         with self._lock:
             self._stop_locked("replaced by a newer reply")
+            self._refresh_devices_if_idle()
             self._cancel = threading.Event()
             self._thread = threading.Thread(
                 target=self._play, args=(iter(sentences), self._cancel), daemon=True,
@@ -62,6 +67,15 @@ class Speaker:
         thread = self._thread
         if thread is not None:
             thread.join(timeout)
+
+    def _refresh_devices_if_idle(self) -> None:
+        # Refreshing closes every open stream, so skip it while an old reply is still shutting down.
+        if self._refresh_devices is None or self.is_playing:
+            return
+        try:
+            self._refresh_devices()
+        except Exception as error:
+            self._log(f"[speaker] device refresh failed: {error!r}")
 
     def _stop_locked(self, reason: str) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -205,6 +219,14 @@ class Speaker:
         cancel.set()
 
 
+def refresh_sounddevice_devices() -> None:
+    """Reread the device list. PortAudio reads it once at startup, so a reconnected headset otherwise fails to open."""
+    import sounddevice
+
+    sounddevice._terminate()
+    sounddevice._initialize()
+
+
 def open_sounddevice_output(sample_rate: int) -> Any:
     import sounddevice
 
@@ -262,3 +284,14 @@ def open_sounddevice_input(on_chunk: Callable[[np.ndarray], None], device: int |
         samplerate=SAMPLE_RATE, channels=1, dtype="float32",
         blocksize=CHUNK_SAMPLES, callback=callback, device=device,
     )
+
+
+def open_named_input(
+    on_chunk: Callable[[np.ndarray], None],
+    name: str,
+    query_devices: Callable[[], Any] | None = None,
+    open_input: Callable[..., Any] = open_sounddevice_input,
+) -> Any:
+    """Open the input matching `name`, looked up again each time because device numbers change after a refresh."""
+    index, _ = resolve_input_device(name, query_devices)
+    return open_input(on_chunk, device=index)
