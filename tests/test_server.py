@@ -26,7 +26,7 @@ class FakeSpeaker:
 
 
 def make_daemon(messages: dict[str, str] | None = None, lookup_message=None, verbose: bool = False,
-                front_app_check=None):
+                orca_visible_check=None):
     speaker = FakeSpeaker()
     log_lines: list[str] = []
     daemon = VoiceDaemon(
@@ -35,7 +35,7 @@ def make_daemon(messages: dict[str, str] | None = None, lookup_message=None, ver
         to_sentences=lambda reply: [f"spoken: {reply}"],
         log=log_lines.append,
         verbose=verbose,
-        front_app_check=front_app_check,
+        orca_visible_check=orca_visible_check,
     )
     daemon.log_lines = log_lines
     return daemon, speaker
@@ -240,33 +240,33 @@ def test_quiet_by_default():
     assert not [line for line in daemon.log_lines if line.startswith("[event]")]
 
 
-def test_reply_is_not_spoken_while_orca_is_not_in_front():
-    daemon, speaker = make_daemon({"pane-a": "All tests pass."}, front_app_check=lambda: False)
+def test_reply_is_not_spoken_while_no_orca_window_is_visible():
+    daemon, speaker = make_daemon({"pane-a": "All tests pass."}, orca_visible_check=lambda: False)
     daemon.handle_focus(focus_payload(FOCUSED))
     daemon.handle_status(status_payload(FOCUSED, "pane-a", "working"))
     daemon.handle_status(status_payload(FOCUSED, "pane-a", "done"))
     assert speaker.spoken == []
-    assert "[speak] skipped: Orca is not the app in front" in daemon.log_lines
+    assert "[speak] skipped: no Orca window is visible" in daemon.log_lines
 
 
-def test_playback_stops_when_orca_leaves_the_front():
-    orca_in_front = [True]
-    daemon, speaker = make_daemon(front_app_check=lambda: orca_in_front[0])
+def test_playback_stops_when_orca_is_no_longer_visible():
+    orca_visible = [True]
+    daemon, speaker = make_daemon(orca_visible_check=lambda: orca_visible[0])
     speaker.is_playing = True
-    daemon.enforce_front_app()
+    daemon.enforce_orca_visible()
     assert speaker.stops == []
-    orca_in_front[0] = False
-    daemon.enforce_front_app()
-    assert speaker.stops == ["Orca is not the app in front"]
+    orca_visible[0] = False
+    daemon.enforce_orca_visible()
+    assert speaker.stops == ["no Orca window is visible"]
 
 
-def test_front_app_check_is_off_when_not_configured():
+def test_orca_visible_check_is_off_when_not_configured():
     daemon, speaker = make_daemon({"pane-a": "All tests pass."})
     daemon.handle_focus(focus_payload(FOCUSED))
     daemon.handle_status(status_payload(FOCUSED, "pane-a", "working"))
     daemon.handle_status(status_payload(FOCUSED, "pane-a", "done"))
     speaker.is_playing = True
-    daemon.enforce_front_app()
+    daemon.enforce_orca_visible()
     assert speaker.spoken == [["spoken: All tests pass."]]
     assert speaker.stops == ["focus changed", "agent started working"]
 

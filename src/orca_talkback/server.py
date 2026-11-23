@@ -19,11 +19,11 @@ class VoiceDaemon:
         to_sentences: Callable[[str], Iterable[str]],
         log: Callable[[str], None] = print,
         verbose: bool = False,
-        front_app_check: Callable[[], bool] | None = None,
+        orca_visible_check: Callable[[], bool] | None = None,
     ) -> None:
         self._rules = rules
         self._verbose = verbose
-        self._front_app_check = front_app_check
+        self._orca_visible_check = orca_visible_check
         # Voice mode: which workspaces the Talkback plugin muted, and each agent session's workspace ids.
         self._muted_workspace_ids: set[str] = set()
         self._off_everywhere = False
@@ -94,17 +94,17 @@ class VoiceDaemon:
         self._log("[stop] requested")
         self._speaker.stop("requested")
 
-    def enforce_front_app(self) -> None:
-        """Stop playback if Orca has left the front. Called periodically while speaking."""
-        if self._front_app_check is not None and self._speaker.is_playing and not self._front_app_check():
-            self._speaker.stop("Orca is not the app in front")
+    def enforce_orca_visible(self) -> None:
+        """Stop playback once no Orca window is visible. Called periodically while speaking."""
+        if self._orca_visible_check is not None and self._speaker.is_playing and not self._orca_visible_check():
+            self._speaker.stop("no Orca window is visible")
 
     def _apply(self, action: Action | None) -> None:
         if isinstance(action, Stop):
             self._speaker.stop(action.reason)
         elif isinstance(action, Speak):
-            if self._front_app_check is not None and not self._front_app_check():
-                self._log("[speak] skipped: Orca is not the app in front")
+            if self._orca_visible_check is not None and not self._orca_visible_check():
+                self._log("[speak] skipped: no Orca window is visible")
                 return
             message = self._lookup_message(action.pane_key)
             if not message.strip():

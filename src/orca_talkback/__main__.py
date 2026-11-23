@@ -18,7 +18,6 @@ from orca_talkback.audio import (
     make_aec_processor,
     make_speech_probability,
 )
-from orca_talkback.frontmost import orca_is_frontmost
 from orca_talkback.replies import last_assistant_message
 from orca_talkback.rules import FocusRules
 from orca_talkback.server import VoiceDaemon, make_server
@@ -32,6 +31,7 @@ from orca_talkback.speaker import (
     resolve_input_device,
 )
 from orca_talkback.spoken import spoken_sentences
+from orca_talkback.visibility import orca_is_visible
 
 KOKORO_BASE_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
 
@@ -51,7 +51,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--port", type=int, default=47823)
     parser.add_argument("--speak-when-hidden", action="store_true",
-                        help="also speak when Orca is not the app in front (default: only while you are looking at Orca)")
+                        help="also speak when no Orca window is visible (default: only while you are looking at Orca)")
     parser.add_argument("--verbose", action="store_true",
                         help="log every Orca event the plugin forwards, for troubleshooting")
     parser.add_argument("--voice", default="bf_emma", help="Kokoro voice")
@@ -76,20 +76,20 @@ def model_cache_dir() -> Path:
     return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "orca-talkback"
 
 
-FRONT_APP_CHECK_SECONDS = 0.5
+VISIBILITY_CHECK_SECONDS = 0.5
 
 
-def start_front_app_watch(daemon: VoiceDaemon) -> None:
-    """Stop playback soon after you switch away from Orca."""
+def start_visibility_watch(daemon: VoiceDaemon) -> None:
+    """Stop playback soon after Orca is covered, minimised or hidden."""
     def watch() -> None:
         while True:
-            time.sleep(FRONT_APP_CHECK_SECONDS)
+            time.sleep(VISIBILITY_CHECK_SECONDS)
             try:
-                daemon.enforce_front_app()
+                daemon.enforce_orca_visible()
             except Exception as error:  # never let the watcher die
-                log(f"[speak] front app check failed: {error!r}")
+                log(f"[speak] visibility check failed: {error!r}")
 
-    threading.Thread(target=watch, name="front-app-watch", daemon=True).start()
+    threading.Thread(target=watch, name="visibility-watch", daemon=True).start()
 
 
 def choose_microphone(requested_name: str | None):
@@ -164,11 +164,11 @@ def main(argv: list[str] | None = None) -> None:
         FocusRules(), speaker, last_assistant_message,
         spoken_sentences,
         log=log, verbose=args.verbose,
-        front_app_check=None if args.speak_when_hidden else orca_is_frontmost,
+        orca_visible_check=None if args.speak_when_hidden else orca_is_visible,
     )
     if not args.speak_when_hidden:
-        log("[speak] only while Orca is the app in front (--speak-when-hidden to change)")
-        start_front_app_watch(daemon)
+        log("[speak] only while an Orca window is visible on a screen (--speak-when-hidden to change)")
+        start_visibility_watch(daemon)
     server = make_server(daemon, port=args.port, log=log)
     print(f"orca-talkback listening on http://127.0.0.1:{args.port} (Ctrl+C to quit)", flush=True)
     signal.signal(signal.SIGTERM, raise_keyboard_interrupt)

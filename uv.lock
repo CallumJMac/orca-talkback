@@ -765,7 +765,7 @@ wheels = [
 
 [[package]]
 name = "orca-talkback"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "kokoro-onnx" },

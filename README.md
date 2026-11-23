@@ -119,12 +119,12 @@ If the daemon is not running, Orca behaves exactly as before.
 
 ### When it speaks
 
-It only speaks while you are looking at the agent: **Orca must be the app in front**, and the agent must be **in the workspace on screen, or the chat you just sent a prompt to**. The second case exists because Orca's focus signal follows the sidebar, not chats, so sending a chat a prompt is the reliable sign you are viewing it. Orca repeats `working` events throughout a turn, so only a change of state counts.
+It only speaks while you are looking at the agent: **an Orca window must be visible** (on any screen, and not hidden behind other windows, so a second monitor counts while you type in another app), and the agent must be **in the workspace on screen, or the chat you just sent a prompt to**. The second case exists because Orca's focus signal follows the sidebar, not chats, so sending a chat a prompt is the reliable sign you are viewing it. Orca repeats `working` events throughout a turn, so only a change of state counts.
 
 | Event | Action |
 |---|---|
-| An agent you are viewing finishes, with Orca in front | Speak its reply |
-| An agent finishes anywhere else, or while another app is in front | Nothing, and it is never replayed later |
+| An agent you are viewing finishes, with an Orca window visible | Speak its reply |
+| An agent finishes anywhere else, or while Orca is covered, minimised or hidden | Nothing, and it is never replayed later |
 | You send a prompt, or the agent on screen starts working again | Stop |
 | You pick another workspace, or switch away from Orca | Stop (and the chat you prompted no longer counts as on screen) |
 | You start talking | Stop |
@@ -186,7 +186,7 @@ uv run orca-talkback --help
 | `--barge-in-ms` | `160` | Continuous speech needed to interrupt. Raise it if it stops too easily |
 | `--vad-threshold` | `0.8` | Speech probability threshold. Lower it if it never stops |
 | `--input-device` | your real microphone | Microphone for barge-in, matched by name, for example `"MacBook Pro Microphone"`. By default it uses the system input, skipping virtual devices |
-| `--speak-when-hidden` | off | Also speak while another app is in front (the workspace rule still applies) |
+| `--speak-when-hidden` | off | Also speak while no Orca window is visible (the workspace rule still applies) |
 | `--verbose` | off | Log every event the plugin forwards, with the focused workspace, for troubleshooting |
 | `--port` | `47823` | Leave as is: the plugin hard-codes this port (`DAEMON_URL` in the plugin's [`src/worker.ts`](https://github.com/CallumJMac/orca-talkback-plugin/blob/main/src/worker.ts)) |
 
@@ -210,8 +210,8 @@ Set `ORCA_CLI_COMMAND` if your `orca` binary lives somewhere unusual.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Nothing is ever spoken | Daemon not running, or plugin not installed | `curl -s 127.0.0.1:47823/health`; `orca plugin list` should show `talkback` running |
-| One agent never speaks | Its workspace was not on screen, or Orca was not in front, when it finished | By design. Run with `--verbose` to see every event and which workspace Orca reports as focused |
-| It stops when I click another app | Replies only play while Orca is in front | By design; pass `--speak-when-hidden` to keep listening from other apps |
+| One agent never speaks | Its workspace was not on screen, or Orca was covered or hidden, when it finished | By design. Run with `--verbose` to see every event and which workspace Orca reports as focused |
+| It stops when another window covers Orca | Replies only play while an Orca window is visible | By design; pass `--speak-when-hidden` to keep listening anyway |
 | It reads the reply word for word | The agent did not write a spoken line | Check the voice-mode hook is installed (see [Speaking or reading](#speaking-or-reading)) and that Talkback is on for the session |
 | Talking over it never stops it | The system input is a virtual device (Zoom, BlackHole), permission was denied, or the threshold is too strict | Check the `[audio] barge-in microphone:` line at startup and pass `--input-device "MacBook Pro Microphone"`; allow your terminal under System Settings, Privacy & Security, Microphone; try `--vad-threshold 0.6` |
 | It stops on its own | Speaker echo is getting through | Lower the volume or use headphones; try `--barge-in-ms 250` |

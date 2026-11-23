@@ -1,6 +1,6 @@
 [project]
 name = "orca-talkback"
-version = "0.1.0"
+version = "0.1.1"
 description = "Hear your Orca coding agents talk back: spoken reply summaries with voice barge-in, fully local audio."
 readme = "README.md"
 license = "Apache-2.0"
