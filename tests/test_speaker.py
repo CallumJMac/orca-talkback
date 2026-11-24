@@ -7,6 +7,7 @@ import pytest
 from orca_talkback.speaker import (
     FADE_SECONDS,
     Speaker,
+    UpsampledOutput,
     first_real_input,
     looks_virtual,
     resolve_input_device,
@@ -252,3 +253,43 @@ def test_first_real_microphone_is_chosen_over_virtual_devices():
 def test_no_real_microphone_returns_none():
     virtual_only = [{"name": "BlackHole 16ch", "max_input_channels": 16}, {"name": "ZoomAudioDevice", "max_input_channels": 2}]
     assert first_real_input(lambda: virtual_only) is None
+
+
+def _upsample(samples: np.ndarray, block: int, factor: int = 2) -> tuple[np.ndarray, UpsampledOutput]:
+    sink = FakeOutput()
+    stream = UpsampledOutput(sink, factor)
+    for start in range(0, len(samples), block):
+        stream.write(samples[start:start + block].reshape(-1, 1))
+    return np.concatenate(sink.blocks).reshape(-1), stream
+
+
+def test_upsampled_output_scales_length_by_the_factor():
+    samples = np.zeros(5000, dtype=np.float32)
+    output, _ = _upsample(samples, 2048, factor=2)
+    assert len(output) == 10000
+
+
+def test_upsampled_output_keeps_a_tone_at_the_same_pitch_and_level():
+    t = np.arange(24000) / SAMPLE_RATE
+    tone = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    output, stream = _upsample(tone, 2048)
+    expected = 0.5 * np.sin(2 * np.pi * 440 * (np.arange(len(output)) - stream.delay) / (2 * SAMPLE_RATE))
+    steady = slice(2000, len(output) - 2000)
+    assert np.max(np.abs(output[steady] - expected[steady])) < 0.01
+
+
+def test_upsampled_output_is_the_same_whatever_the_block_size():
+    rng = np.random.default_rng(0)
+    samples = rng.uniform(-0.5, 0.5, 9000).astype(np.float32)
+    whole, _ = _upsample(samples, len(samples))
+    for block in (1, 7, 2048):
+        chunked, _ = _upsample(samples, block)
+        assert np.allclose(chunked, whole, atol=1e-5)
+
+
+def test_upsampled_output_passes_start_stop_and_close_through():
+    sink = FakeOutput()
+    stream = UpsampledOutput(sink, 2)
+    stream.start()
+    stream.close()
+    assert sink.started and sink.closed
