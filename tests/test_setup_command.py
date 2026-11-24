@@ -59,3 +59,56 @@ def test_refuses_to_touch_unreadable_settings(tmp_path):
     with pytest.raises(ValueError):
         install_claude_hook(settings, tmp_path / HOOK_SCRIPT_NAME)
     assert settings.read_text() == "{ not json"
+
+
+class TestLaunchAtLoginOffer:
+    @pytest.fixture(autouse=True)
+    def darwin_and_recorded_install(self, monkeypatch):
+        from orca_talkback import service
+
+        monkeypatch.setattr("orca_talkback.setup_command.sys.platform", "darwin")
+        self.installed = []
+        monkeypatch.setattr(service, "install", lambda args: self.installed.append(args) or "Installed it")
+
+    def offer(self, tmp_path, choice, interactive, answer=""):
+        from orca_talkback.setup_command import offer_launch_at_login
+
+        return offer_launch_at_login(choice, interactive=interactive, ask=lambda prompt: answer,
+                                     plist_path=tmp_path / "agent.plist")
+
+    def test_flag_installs_without_asking(self, tmp_path):
+        assert self.offer(tmp_path, True, interactive=False) is True
+        assert self.installed == [[]]
+
+    def test_no_flag_asks_and_a_blank_answer_means_yes(self, tmp_path):
+        assert self.offer(tmp_path, None, interactive=True, answer="") is True
+        assert self.installed == [[]]
+
+    def test_answering_no_installs_nothing(self, tmp_path, capsys):
+        assert self.offer(tmp_path, None, interactive=True, answer="n") is False
+        assert self.installed == []
+        assert "service install" in capsys.readouterr().out
+
+    def test_without_a_terminal_it_does_not_ask_and_prints_the_command(self, tmp_path, capsys):
+        assert self.offer(tmp_path, None, interactive=False) is False
+        assert self.installed == []
+        assert "service install" in capsys.readouterr().out
+
+    def test_opting_out_with_the_flag_is_silent(self, tmp_path, capsys):
+        assert self.offer(tmp_path, False, interactive=True) is False
+        assert self.installed == [] and capsys.readouterr().out == ""
+
+    def test_an_existing_agent_is_left_alone(self, tmp_path):
+        (tmp_path / "agent.plist").write_text("x")
+        assert self.offer(tmp_path, None, interactive=True) is True
+        assert self.installed == []
+
+    def test_a_failed_install_is_reported_but_does_not_stop_setup(self, tmp_path, monkeypatch, capsys):
+        from orca_talkback import service
+
+        def fail(args):
+            raise service.ServiceError("launchctl said no")
+
+        monkeypatch.setattr(service, "install", fail)
+        assert self.offer(tmp_path, True, interactive=False) is False
+        assert "launchctl said no" in capsys.readouterr().out

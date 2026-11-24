@@ -39,6 +39,7 @@ The last line is the next prompt being sent: playback stops the moment the agent
 
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
+- [Running in the background](#running-in-the-background)
 - [Turning it on and off](#turning-it-on-and-off)
 - [Speaking or reading](#speaking-or-reading)
 - [Configuration](#configuration)
@@ -61,7 +62,7 @@ uv tool install --python 3.14 orca-talkback
 orca-talkback setup
 ```
 
-`setup` installs the Claude Code voice-mode hook (see [Speaking or reading](#speaking-or-reading)), downloads the Kokoro voice (about 340 MB), checks your microphone and checks the Orca plugin. The first install also downloads PyTorch for voice detection, so it takes a few minutes.
+`setup` installs the Claude Code voice-mode hook (see [Speaking or reading](#speaking-or-reading)), downloads the Kokoro voice (about 340 MB), checks your microphone, checks the Orca plugin and, in a terminal, asks whether to start orca-talkback at login (see [Running in the background](#running-in-the-background)). The first install also downloads PyTorch for voice detection, so it takes a few minutes.
 
 ### 2. Add the Talkback plugin to Orca
 
@@ -74,6 +75,8 @@ orca plugin install CallumJMac/orca-talkback-plugin
 Orca lists the access the plugin asks for (read workspace focus and agent status) and prints a `Fingerprint: ap1-...` line; re-run the command with `--approve` and that fingerprint.
 
 ### 3. Run it
+
+If you answered yes to "Start orca-talkback automatically at login?" in step 1, it is already running, so skip the command below. Otherwise start it in a terminal:
 
 ```bash
 orca-talkback
@@ -130,6 +133,27 @@ It only speaks while you are looking at the agent: **an Orca window must be visi
 | You start talking | Stop |
 
 The design document, with the full rules and trade-offs, is in [`docs/design.md`](docs/design.md).
+
+---
+
+## Running in the background
+
+Orca only hears orca-talkback while the daemon is running. To have it start at every login and come back if it stops, install it as a launchd agent:
+
+```bash
+orca-talkback service install
+```
+
+`setup` offers this too (`orca-talkback setup --launch-at-login` to say yes up front, `--no-launch-at-login` to skip the question).
+
+| Command | What it does |
+|---|---|
+| `orca-talkback service install [flags]` | Writes `~/Library/LaunchAgents/com.orca-talkback.plist` and starts it. Any [daemon flags](#configuration) you add, such as `--voice af_heart` or `--no-barge-in`, are stored in the agent. Run it again with different flags to change them |
+| `orca-talkback service restart` | Reloads the agent, for example after a sleep that left the audio device stale |
+| `orca-talkback service status` | Shows whether the agent is loaded, whether the daemon answers, and the stored flags |
+| `orca-talkback service uninstall` | Stops it and removes the agent |
+
+The daemon logs to `~/Library/Logs/orca-talkback.log`. Loading the voice takes about 25 seconds after a start or restart, during which nothing is spoken. `install` refuses to run while a daemon you started by hand is still listening, so stop that one first. If barge-in does not work from the agent, check that orca-talkback is allowed under System Settings, Privacy & Security, Microphone.
 
 ---
 
@@ -258,7 +282,6 @@ The plugin's code and tests are in [orca-talkback-plugin](https://github.com/Cal
 Issues and pull requests are welcome. On the roadmap:
 
 - **More speech engines.** Synthesis is one `synthesize(text)` function; [pocket-tts](https://huggingface.co/kyutai/pocket-tts) (about 125 ms to first audio on CPU) is the first candidate.
-- **Launch at login** with a launchd agent.
 
 ---
 
