@@ -5,10 +5,16 @@
 # When Talkback is muted, off, or not running, it prints nothing and the agent writes as usual.
 # Only Orca's chat view hides the spoken line; Claude Code's terminal prints it, so terminal
 # sessions (no ORCA_STRUCTURED_SESSION) get no instruction and the daemon speaks a cleaned-up reply.
-[ "${ORCA_STRUCTURED_SESSION:-}" = "1" ] || exit 0
+# Every prompt inside Orca, chat or terminal, is also reported to the daemon with its first 200
+# characters (local only, never stored), so it can tell your prompts from agents waking each other.
+[ "${ORCA_STRUCTURED_SESSION:-}" = "1" ] || [ -n "${ORCA_PANE_KEY:-}" ] || exit 0
 url="${TALKBACK_URL:-http://127.0.0.1:47823}"
-session_id=$(jq -r '.session_id // empty' 2>/dev/null) || exit 0
+input=$(cat)
+session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null) || exit 0
 [ -n "$session_id" ] || exit 0
+printf '%s' "$input" | jq -c '{session: .session_id, prompt: ((.prompt // "") | tostring | .[0:200])}' 2>/dev/null \
+  | curl -s --max-time 0.3 -X POST -H 'content-type: application/json' --data-binary @- "$url/prompt" >/dev/null 2>&1
+[ "${ORCA_STRUCTURED_SESSION:-}" = "1" ] || exit 0
 voice=$(curl -s --max-time 0.5 "$url/voice-mode?session=$session_id" 2>/dev/null | jq -r '.voice // false' 2>/dev/null)
 [ "$voice" = "true" ] || exit 0
 instruction='Talkback voice mode is on for this session: the user will hear a spoken version of your reply. End every reply with a blank line and then one final line in exactly this form, which markdown renderers hide: [//]: # (spoken: YOUR SPOKEN VERSION) In it, write one to three short conversational sentences, as you would say them out loud to a colleague: what you did or found, and any question for the user. Make the first sentence short, under ten words, so it can be spoken straight away. No markdown, code, file paths, URLs, dashes or parentheses. Write the rest of the reply as usual.'

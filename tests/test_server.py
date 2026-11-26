@@ -229,8 +229,8 @@ def test_verbose_logs_every_event_even_without_an_action():
     events = [line for line in daemon.log_lines if line.startswith("[event]")]
     assert events == [
         "[event] focus workspace=workspace-focused name='Demo'",
-        "[event] status pane=pane-b state=working workspace=workspace-other focused=workspace-focused",
-        "[event] status pane=pane-b state=done workspace=workspace-other focused=workspace-focused",
+        "[event] status pane=pane-b state=working session=None workspace=workspace-other focused=workspace-focused",
+        "[event] status pane=pane-b state=done session=None workspace=workspace-other focused=workspace-focused",
     ]
 
 
@@ -254,7 +254,7 @@ def test_playback_stops_when_orca_is_no_longer_visible():
     daemon, speaker = make_daemon(orca_visible_check=lambda: orca_visible[0])
     speaker.is_playing = True
     daemon.enforce_orca_visible()
-    assert speaker.stops == []
+    assert "you sent a new prompt" not in speaker.stops
     orca_visible[0] = False
     daemon.enforce_orca_visible()
     assert speaker.stops == ["no Orca window is visible"]
@@ -302,3 +302,64 @@ def test_http_voice_mode(server_url):
     assert post(f"{base_url}/mutes", json.dumps({"muted": [], "off": True}).encode()) == 200
     with urllib.request.urlopen(f"{base_url}/voice-mode?session=claude-session-1", timeout=5) as response:
         assert json.loads(response.read()) == {"voice": False}
+
+
+def make_clocked_daemon(messages):
+    now = [1000.0]
+    daemon, speaker = make_daemon(messages)
+    daemon._clock = lambda: now[0]
+    return daemon, speaker, now
+
+
+def status(pane_key, state, workspace, session):
+    return {"paneKey": pane_key, "state": state, "workspaceId": workspace, "sessionId": session}
+
+
+def test_an_agent_woken_by_a_worker_message_is_not_spoken_while_you_view_another_chat():
+    daemon, speaker, _ = make_clocked_daemon({"busy": "Worker results are in.", "viewed": "Hello."})
+    daemon.handle_focus({"context": {"workspaceId": "viewed-workspace", "displayName": "TTS Paper"}})
+    daemon.handle_status(status("busy", "done", "busy-workspace", "busy-session"))
+    daemon.handle_prompt({"session": "busy-session", "prompt": "──── From: STRUCTWORKER_1 ────\nPR opened"})
+    daemon.handle_status(status("busy", "working", "busy-workspace", "busy-session"))
+    daemon.handle_status(status("busy", "done", "busy-workspace", "busy-session"))
+    assert speaker.spoken == []
+    assert "you sent a new prompt" not in speaker.stops
+
+
+def test_your_prompt_to_a_chat_still_marks_it_as_the_one_you_are_viewing():
+    daemon, speaker, now = make_clocked_daemon({"chat": "All done."})
+    daemon.handle_focus({"context": {"workspaceId": "sidebar-workspace", "displayName": "Sidebar"}})
+    daemon.handle_status(status("chat", "done", "chat-workspace", "chat-session"))
+    daemon.handle_prompt({"session": "chat-session", "prompt": "Please fix the flaky test"})
+    now[0] += 2
+    daemon.handle_status(status("chat", "working", "chat-workspace", "chat-session"))
+    daemon.handle_status(status("chat", "done", "chat-workspace", "chat-session"))
+    assert speaker.spoken == [["spoken: All done."]]
+
+
+def test_an_old_prompt_does_not_confirm_a_later_wake_up():
+    daemon, speaker, now = make_clocked_daemon({"chat": "Later reply."})
+    daemon.handle_focus({"context": {"workspaceId": "sidebar-workspace", "displayName": "Sidebar"}})
+    daemon.handle_status(status("chat", "done", "chat-workspace", "chat-session"))
+    daemon.handle_prompt({"session": "chat-session", "prompt": "Start the long job"})
+    now[0] += 120
+    daemon.handle_status(status("chat", "working", "chat-workspace", "chat-session"))
+    daemon.handle_status(status("chat", "done", "chat-workspace", "chat-session"))
+    assert speaker.spoken == []
+
+
+def test_sessions_without_hook_reports_keep_the_old_prompt_guess():
+    daemon, speaker, _ = make_clocked_daemon({"chat": "Reply."})
+    daemon.handle_focus({"context": {"workspaceId": "sidebar-workspace", "displayName": "Sidebar"}})
+    daemon.handle_status(status("chat", "done", "chat-workspace", "no-hook-session"))
+    daemon.handle_status(status("chat", "working", "chat-workspace", "no-hook-session"))
+    daemon.handle_status(status("chat", "done", "chat-workspace", "no-hook-session"))
+    assert speaker.spoken == [["spoken: Reply."]]
+
+
+def test_prompt_payload_is_validated():
+    daemon, _, _ = make_clocked_daemon({})
+    with pytest.raises(ValueError):
+        daemon.handle_prompt({"session": 5, "prompt": "hi"})
+    with pytest.raises(ValueError):
+        daemon.handle_prompt({"session": "s", "prompt": None})

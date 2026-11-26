@@ -31,12 +31,15 @@ def daemon_url():
     server.server_close()
 
 
-def run_hook(url: str, session_id: str = "claude-session-1", orca_chat: bool = True) -> str:
+def run_hook(url: str, session_id: str = "claude-session-1", orca_chat: bool = True,
+             orca_terminal: bool = False, prompt: str = "hi") -> str:
     environment = {"PATH": "/usr/bin:/bin:/opt/homebrew/bin", "TALKBACK_URL": url}
     if orca_chat:
         environment["ORCA_STRUCTURED_SESSION"] = "1"  # set by Orca for chat sessions, absent in terminals
+    if orca_terminal:
+        environment["ORCA_PANE_KEY"] = "pane-1"  # set by Orca for its terminal panes
     completed = subprocess.run(
-        ["sh", str(HOOK)], input=json.dumps({"session_id": session_id, "prompt": "hi"}),
+        ["sh", str(HOOK)], input=json.dumps({"session_id": session_id, "prompt": prompt}),
         capture_output=True, text=True, timeout=10, env=environment, check=False,
     )
     assert completed.returncode == 0, completed.stderr
@@ -64,3 +67,27 @@ def test_daemon_down_means_reading_mode():
 def test_terminal_sessions_get_no_instruction_because_terminals_show_the_line(daemon_url):
     _, url = daemon_url
     assert run_hook(url, orca_chat=False) == ""
+
+
+def test_a_chat_prompt_is_reported_as_yours(daemon_url):
+    daemon, url = daemon_url
+    run_hook(url, session_id="chat-session", prompt="Please fix the build")
+    assert daemon._prompts["chat-session"][1] is True
+
+
+def test_a_worker_message_is_reported_as_another_agent(daemon_url):
+    daemon, url = daemon_url
+    run_hook(url, session_id="chat-session", prompt="──── From: STRUCTWORKER_1 ────\nPR opened")
+    assert daemon._prompts["chat-session"][1] is False
+
+
+def test_terminal_prompts_are_reported_without_adding_the_instruction(daemon_url):
+    daemon, url = daemon_url
+    assert run_hook(url, session_id="terminal-session", orca_chat=False, orca_terminal=True) == ""
+    assert daemon._prompts["terminal-session"][1] is True
+
+
+def test_prompts_outside_orca_are_not_reported(daemon_url):
+    daemon, url = daemon_url
+    run_hook(url, session_id="plain-session", orca_chat=False)
+    assert "plain-session" not in daemon._prompts

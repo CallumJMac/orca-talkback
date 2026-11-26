@@ -137,3 +137,45 @@ def test_answering_a_question_in_the_focused_workspace_stops_then_speaks():
     rules.on_status(FOCUSED, "chat-pane", "waiting")
     assert rules.on_status(FOCUSED, "chat-pane", "working") == Stop("you sent a new prompt")
     assert rules.on_status(FOCUSED, "chat-pane", "done") == Speak("chat-pane")
+
+
+def test_an_agent_waking_itself_does_not_count_as_your_prompt():
+    rules = FocusRules()
+    rules.on_focus("viewed")
+    rules.on_status("elsewhere", "busy-pane", "working")
+    rules.on_status("elsewhere", "busy-pane", "done")
+    assert rules.on_status("elsewhere", "busy-pane", "working", user_prompted=False) is None
+    assert rules.on_status("elsewhere", "busy-pane", "done") is None
+
+
+def test_a_confirmed_prompt_marks_the_chat_you_are_viewing():
+    rules = FocusRules()
+    rules.on_focus("sidebar")
+    rules.on_status("chat", "chat-pane", "done")
+    assert rules.on_status("chat", "chat-pane", "working", user_prompted=True) == Stop("you sent a new prompt")
+    assert rules.on_status("chat", "chat-pane", "done") == Speak("chat-pane")
+
+
+def test_an_agent_you_are_viewing_that_wakes_itself_is_still_spoken():
+    rules = FocusRules()
+    rules.on_focus("viewed")
+    rules.on_status("viewed", "pane", "done")
+    assert rules.on_status("viewed", "pane", "working", user_prompted=False) == Stop("agent started working")
+    assert rules.on_status("viewed", "pane", "done") == Speak("pane")
+
+
+def test_unknown_prompt_source_keeps_the_old_behaviour():
+    rules = FocusRules()
+    rules.on_focus("sidebar")
+    rules.on_status("chat", "chat-pane", "done")
+    assert rules.on_status("chat", "chat-pane", "working") == Stop("you sent a new prompt")
+
+
+def test_orca_and_claude_agent_messages_are_not_your_prompts():
+    from orca_talkback.rules import is_agent_message
+
+    assert is_agent_message("──── From: STRUCTWORKER_2351251B (structworker_2351251b) ────\nDone with PR 12")
+    assert is_agent_message("  <task-notification>\n<task-id>abc</task-id>")
+    assert is_agent_message("You are working inside Orca, a multi-agent IDE. You are a dispatched worker.")
+    assert not is_agent_message("Do all the strava ones we can and review them")
+    assert not is_agent_message("")

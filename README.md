@@ -63,6 +63,8 @@ orca-talkback setup
 
 `setup` installs the Claude Code voice-mode hook (see [Speaking or reading](#speaking-or-reading)), downloads the Kokoro voice (about 340 MB), checks your microphone and checks the Orca plugin. The first install also downloads PyTorch for voice detection, so it takes a few minutes.
 
+To upgrade later, run `uv tool upgrade orca-talkback`, then `orca-talkback setup` again so the Claude Code hook matches the new version.
+
 ### 2. Add the Talkback plugin to Orca
 
 In Orca, open **Settings, Plugins**, add the community marketplace (`https://github.com/stablyai/orca-community-plugins.git`, ref `main`) and install **Talkback**. Or from a terminal (the `orca` CLI ships inside the app; if it is not on your PATH, use `/Applications/Orca.app/Contents/Resources/bin/orca`):
@@ -119,7 +121,7 @@ If the daemon is not running, Orca behaves exactly as before.
 
 ### When it speaks
 
-It only speaks while you are looking at the agent: **an Orca window must be visible** (on any screen, and not hidden behind other windows, so a second monitor counts while you type in another app), and the agent must be **in the workspace on screen, or the chat you just sent a prompt to**. The second case exists because Orca's focus signal follows the sidebar, not chats, so sending a chat a prompt is the reliable sign you are viewing it. Orca repeats `working` events throughout a turn, so only a change of state counts.
+It only speaks while you are looking at the agent: **an Orca window must be visible** (on any screen, and not hidden behind other windows, so a second monitor counts while you type in another app), and the agent must be **in the workspace on screen, or the chat you just sent a prompt to**. The second case exists because Orca's focus signal follows the sidebar, not chats, so sending a chat a prompt is the reliable sign you are viewing it. Only your own prompts count: the hook tells the daemon when a prompt is really a message from another agent (an Orca worker reporting back, or a background task finishing), so an agent waking itself in another workspace stays quiet. Orca repeats `working` events throughout a turn, so only a change of state counts.
 
 | Event | Action |
 |---|---|

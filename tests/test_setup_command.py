@@ -59,3 +59,13 @@ def test_refuses_to_touch_unreadable_settings(tmp_path):
     with pytest.raises(ValueError):
         install_claude_hook(settings, tmp_path / HOOK_SCRIPT_NAME)
     assert settings.read_text() == "{ not json"
+
+
+def test_an_installed_hook_that_is_not_last_is_left_alone(tmp_path):
+    settings_path = tmp_path / "settings.json"
+    hook_path = tmp_path / HOOK_SCRIPT_NAME
+    ours = {"hooks": [{"type": "command", "command": str(hook_path), "timeout": 2}]}
+    orca = {"hooks": [{"type": "command", "command": "orca-hook", "timeout": 10, "async": True}]}
+    settings_path.write_text(json.dumps({"hooks": {"UserPromptSubmit": [ours, orca]}}))
+    assert install_claude_hook(settings_path, hook_path) is False
+    assert json.loads(settings_path.read_text())["hooks"]["UserPromptSubmit"] == [ours, orca]

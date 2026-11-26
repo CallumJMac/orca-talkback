@@ -2,12 +2,16 @@
 
 import json
 import threading
+import time
 from collections.abc import Callable, Iterable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from orca_talkback.rules import Action, FocusRules, Speak, Stop
+from orca_talkback.rules import Action, FocusRules, Speak, Stop, is_agent_message
+
+# How long after the hook reports your prompt the agent may start working and still count as prompted.
+PROMPT_MATCH_SECONDS = 15
 
 
 class VoiceDaemon:
@@ -20,8 +24,12 @@ class VoiceDaemon:
         log: Callable[[str], None] = print,
         verbose: bool = False,
         orca_visible_check: Callable[[], bool] | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._rules = rules
+        self._clock = clock
+        # The latest prompt the Claude Code hook reported for each session: when, and whether it was yours.
+        self._prompts: dict[str, tuple[float, bool]] = {}
         self._verbose = verbose
         self._orca_visible_check = orca_visible_check
         # Voice mode: which workspaces the Talkback plugin muted, and each agent session's workspace ids.
@@ -64,15 +72,35 @@ class VoiceDaemon:
                 }
             if self._verbose:
                 self._log(
-                    f"[event] status pane={pane_key} state={state} "
+                    f"[event] status pane={pane_key} state={state} session={payload.get('sessionId')} "
                     f"workspace={payload.get('workspaceId')} focused={self._rules.focused_workspace_id}"
                 )
             action = self._rules.on_status(
                 payload.get("workspaceId"), pane_key, state, workspace_list_id=payload.get("workspaceListId"),
+                user_prompted=self._user_prompted(session_id),
             )
             if action is not None:
                 self._log(f"[status] {pane_key} {state} -> {describe_action(action)}")
             self._apply(action)
+
+    def handle_prompt(self, payload: dict) -> None:
+        """The Claude Code hook reports each prompt, so agent wake-ups are not mistaken for yours."""
+        session_id = payload.get("session")
+        prompt = payload.get("prompt", "")
+        if not isinstance(session_id, str) or not isinstance(prompt, str):
+            raise ValueError("session and prompt must be strings")
+        from_you = not is_agent_message(prompt)
+        with self._lock:
+            self._prompts[session_id] = (self._clock(), from_you)
+            if self._verbose:
+                self._log(f"[prompt] session={session_id} from {'you' if from_you else 'another agent'}")
+
+    def _user_prompted(self, session_id: object) -> bool | None:
+        """Whether your prompt just woke this session; None when the hook never reported on it."""
+        if not isinstance(session_id, str) or session_id not in self._prompts:
+            return None
+        reported_at, from_you = self._prompts[session_id]
+        return from_you and self._clock() - reported_at <= PROMPT_MATCH_SECONDS
 
     def handle_mutes(self, payload: dict) -> None:
         muted = payload.get("muted", [])
@@ -139,6 +167,7 @@ def make_server(
         "/status": daemon.handle_status,
         "/stop": daemon.handle_stop,
         "/mutes": daemon.handle_mutes,
+        "/prompt": daemon.handle_prompt,
     }
 
     class Handler(BaseHTTPRequestHandler):

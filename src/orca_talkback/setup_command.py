@@ -34,6 +34,10 @@ def install_claude_hook(settings_path: Path, hook_path: Path) -> bool:
     hooks = settings.setdefault("hooks", {})
     entries = hooks.setdefault("UserPromptSubmit", [])
     wanted = {"type": "command", "command": str(hook_path), "timeout": HOOK_TIMEOUT_SECONDS}
+    ours = [hook for entry in entries for hook in entry.get("hooks", [])
+            if str(hook.get("command", "")).endswith(HOOK_SCRIPT_NAME)]
+    if ours == [wanted]:
+        return False  # already installed exactly once, wherever it sits among other hooks
     kept = []
     for entry in entries:
         others = [hook for hook in entry.get("hooks", []) if not str(hook.get("command", "")).endswith(HOOK_SCRIPT_NAME)]
