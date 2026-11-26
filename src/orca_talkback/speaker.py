@@ -2,6 +2,7 @@
 
 import queue
 import threading
+import time
 from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
@@ -16,14 +17,35 @@ GAP_FILL_SECONDS = 0.02  # silence written while the next sentence is synthesise
 Synthesize = Callable[[str], tuple[np.ndarray, int]]
 
 
+class PlaybackStats:
+    """Per-reply timing of the write loop, logged after each reply to diagnose choppy audio."""
+
+    def __init__(self) -> None:
+        self.blocks = 0
+        self.underflows = 0
+        self.slowest_check = 0.0
+        self.slowest_write = 0.0
+
+    def record(self, check_seconds: float, write_seconds: float, underflowed: bool) -> None:
+        self.blocks += 1
+        self.underflows += int(underflowed)
+        self.slowest_check = max(self.slowest_check, check_seconds)
+        self.slowest_write = max(self.slowest_write, write_seconds)
+
+    def summary(self) -> str:
+        return (f"played {self.blocks} blocks, {self.underflows} underruns, slowest barge-in check "
+                f"{self.slowest_check * 1000:.1f} ms, slowest write {self.slowest_write * 1000:.1f} ms")
+
+
 class Speaker:
     """Speaks one reply at a time. A new reply or stop() cuts the current one with a short fade.
 
     open_output(sample_rate) and open_input(on_chunk) return stream objects with
     start(), stop() and close(); output streams also take write(frames).
     make_detector() returns a BargeInDetector for each reply.
-    refresh_devices() rereads the audio device list before each reply, so a headset that
-    reconnected since the last one still opens.
+    refresh_devices() rereads the audio device list. It is only called when a stream fails to
+    open (a headset reconnected since startup), because refreshing after every reply leaves
+    macOS audio resources behind and playback gradually starts to underrun.
     """
 
     def __init__(
@@ -44,6 +66,7 @@ class Speaker:
         self._lock = threading.Lock()
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
+        self._playback_stats = PlaybackStats()
 
     @property
     def is_playing(self) -> bool:
@@ -52,7 +75,6 @@ class Speaker:
     def speak(self, sentences: Iterable[str]) -> None:
         with self._lock:
             self._stop_locked("replaced by a newer reply")
-            self._refresh_devices_if_idle()
             self._cancel = threading.Event()
             self._thread = threading.Thread(
                 target=self._play, args=(iter(sentences), self._cancel), daemon=True,
@@ -68,14 +90,17 @@ class Speaker:
         if thread is not None:
             thread.join(timeout)
 
-    def _refresh_devices_if_idle(self) -> None:
-        # Refreshing closes every open stream, so skip it while an old reply is still shutting down.
-        if self._refresh_devices is None or self.is_playing:
-            return
+    def _refresh_after(self, what: str, error: Exception) -> bool:
+        """Reread the audio devices after `what` failed to open; returns whether a retry makes sense."""
+        if self._refresh_devices is None:
+            return False
+        self._log(f"[speaker] could not open the {what} ({error!r}); rereading audio devices and retrying")
         try:
             self._refresh_devices()
-        except Exception as error:
-            self._log(f"[speaker] device refresh failed: {error!r}")
+        except Exception as refresh_error:
+            self._log(f"[speaker] device refresh failed: {refresh_error!r}")
+            return False
+        return True
 
     def _stop_locked(self, reason: str) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -90,7 +115,8 @@ class Speaker:
         threading.Thread(
             target=self._synthesize_ahead, args=(sentences, synthesized, cancel), daemon=True,
         ).start()
-        detector, input_stream = self._start_barge_in()
+        detector, input_stream = self._start_barge_in(allow_refresh=True)
+        self._playback_stats = PlaybackStats()
         output_stream = None
         output_rate = 0
         try:
@@ -100,8 +126,16 @@ class Speaker:
                     break
                 samples, sample_rate = item
                 if output_stream is None:
-                    output_stream = self._open_output(sample_rate)
-                    output_stream.start()
+                    try:
+                        output_stream = self._start_output(sample_rate)
+                    except Exception as error:
+                        if not self._refresh_after("speaker", error):
+                            raise
+                        # The refresh closed the barge-in stream too, so reopen it after the speaker.
+                        self._close_stream(input_stream)
+                        input_stream = None
+                        output_stream = self._start_output(sample_rate)
+                        detector, input_stream = self._start_barge_in(allow_refresh=False)
                     output_rate = sample_rate
                     if detector is not None:
                         detector.drain_mic()
@@ -112,19 +146,33 @@ class Speaker:
         except Exception as error:
             self._log(f"[speaker] playback failed: {error!r}")
         finally:
+            if self._playback_stats.blocks:
+                self._log(f"[speaker] {self._playback_stats.summary()}")
             cancel.set()  # also stops the synthesis thread
             for stream in (input_stream, output_stream):
-                if stream is None:
-                    continue
-                try:
-                    try:
-                        stream.stop()
-                    finally:
-                        stream.close()
-                except Exception as error:
-                    self._log(f"[speaker] stream cleanup failed: {error!r}")
+                self._close_stream(stream)
 
-    def _start_barge_in(self) -> tuple[Any, Any]:
+    def _close_stream(self, stream: Any) -> None:
+        if stream is None:
+            return
+        try:
+            try:
+                stream.stop()
+            finally:
+                stream.close()
+        except Exception as error:
+            self._log(f"[speaker] stream cleanup failed: {error!r}")
+
+    def _start_output(self, sample_rate: int) -> Any:
+        output_stream = self._open_output(sample_rate)
+        try:
+            output_stream.start()
+        except Exception:
+            self._close_stream(output_stream)
+            raise
+        return output_stream
+
+    def _start_barge_in(self, allow_refresh: bool) -> tuple[Any, Any]:
         if self._make_detector is None or self._open_input is None:
             return None, None
         try:
@@ -140,6 +188,8 @@ class Speaker:
                 raise
             return detector, input_stream
         except Exception as error:
+            if allow_refresh and self._refresh_after("microphone", error):
+                return self._start_barge_in(allow_refresh=False)
             self._log(f"[speaker] barge-in unavailable: {error!r}")
             return None, None
 
@@ -199,12 +249,15 @@ class Speaker:
         """Write one synthesised item; returns False if playback was cut short."""
         frames = samples.reshape(-1, 1).astype(np.float32)
         for start in range(0, len(frames), WRITE_BLOCK_SAMPLES):
+            checked_at = time.perf_counter()
             if detector is not None and detector.user_is_speaking():
                 self._barge_in(cancel)
             if cancel.is_set():
                 self._fade_out(output_stream, frames[start:], sample_rate)
                 return False
-            output_stream.write(frames[start:start + WRITE_BLOCK_SAMPLES])
+            written_at = time.perf_counter()
+            underflowed = output_stream.write(frames[start:start + WRITE_BLOCK_SAMPLES])
+            self._playback_stats.record(written_at - checked_at, time.perf_counter() - written_at, underflowed is True)
         return True
 
     @staticmethod

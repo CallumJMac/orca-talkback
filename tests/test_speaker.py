@@ -254,59 +254,105 @@ def test_no_real_microphone_returns_none():
     assert first_real_input(lambda: virtual_only) is None
 
 
-def test_audio_devices_are_refreshed_before_each_reply_so_reconnected_headsets_work():
+def short_audio(text):
+    return np.ones(SAMPLE_RATE // 20, dtype=np.float32), SAMPLE_RATE
+
+
+def test_healthy_replies_never_refresh_the_audio_devices():
+    # Refreshing PortAudio after every reply made playback underrun more and more (0.1.2).
+    refreshes: list[int] = []
+    speaker = Speaker(short_audio, lambda sample_rate: FakeOutput(), refresh_devices=lambda: refreshes.append(1),
+                      log=lambda line: None)
+    for text in ("One.", "Two.", "Three."):
+        speaker.speak([text])
+        speaker.wait(2)
+    assert refreshes == []
+
+
+def test_a_speaker_that_fails_to_open_is_retried_once_after_a_refresh():
     events: list[str] = []
+    outputs: list[FakeOutput] = []
 
     def open_output(sample_rate):
         events.append("open output")
+        if events.count("open output") == 1:
+            raise RuntimeError("Internal PortAudio error")
+        outputs.append(FakeOutput())
+        return outputs[-1]
+
+    speaker = Speaker(short_audio, open_output, refresh_devices=lambda: events.append("refresh"), log=lambda line: None)
+    speaker.speak(["Hello."])
+    speaker.wait(2)
+    assert events == ["open output", "refresh", "open output"]
+    assert outputs[0].total_samples() > 0
+
+
+def test_barge_in_is_reopened_after_a_speaker_refresh():
+    inputs: list[FakeInput] = []
+    opened_outputs: list[int] = []
+
+    def open_output(sample_rate):
+        opened_outputs.append(1)
+        if len(opened_outputs) == 1:
+            raise RuntimeError("Internal PortAudio error")
         return FakeOutput()
 
-    def synthesize(text):
-        return np.ones(SAMPLE_RATE // 20, dtype=np.float32), SAMPLE_RATE
+    def open_input(on_chunk):
+        inputs.append(FakeInput(on_chunk))
+        return inputs[-1]
 
-    speaker = Speaker(synthesize, open_output, refresh_devices=lambda: events.append("refresh"), log=lambda line: None)
-    speaker.speak(["One."])
+    speaker = Speaker(short_audio, open_output, open_input=open_input, make_detector=FakeDetector,
+                      refresh_devices=lambda: None, log=lambda line: None)
+    speaker.speak(["Hello."])
     speaker.wait(2)
-    speaker.speak(["Two."])
+    assert len(inputs) == 2
+    assert inputs[0].closed and inputs[1].closed
+
+
+def test_a_microphone_that_fails_to_open_is_retried_once_after_a_refresh():
+    events: list[str] = []
+
+    def open_input(on_chunk):
+        events.append("open input")
+        if events.count("open input") == 1:
+            raise RuntimeError("Internal PortAudio error")
+        return FakeInput(on_chunk)
+
+    speaker = Speaker(short_audio, lambda sample_rate: FakeOutput(), open_input=open_input, make_detector=FakeDetector,
+                      refresh_devices=lambda: events.append("refresh"), log=lambda line: None)
+    speaker.speak(["Hello."])
     speaker.wait(2)
-    assert events == ["refresh", "open output", "refresh", "open output"]
+    assert events == ["open input", "refresh", "open input"]
 
 
-def test_a_failed_device_refresh_is_logged_and_the_reply_still_plays():
-    outputs: list[FakeOutput] = []
+def test_a_speaker_that_still_fails_after_a_refresh_is_logged_without_looping():
+    events: list[str] = []
     logs: list[str] = []
 
     def open_output(sample_rate):
-        outputs.append(FakeOutput())
-        return outputs[-1]
+        events.append("open output")
+        raise RuntimeError("Internal PortAudio error")
+
+    speaker = Speaker(short_audio, open_output, refresh_devices=lambda: events.append("refresh"), log=logs.append)
+    speaker.speak(["Hello."])
+    speaker.wait(2)
+    assert events == ["open output", "refresh", "open output"]
+    assert any("playback failed" in line for line in logs)
+
+
+def test_a_failed_device_refresh_is_logged():
+    logs: list[str] = []
+
+    def open_output(sample_rate):
+        raise RuntimeError("Internal PortAudio error")
 
     def broken_refresh():
         raise RuntimeError("PortAudio busy")
 
-    speaker = Speaker(lambda text: (np.ones(100, dtype=np.float32), SAMPLE_RATE), open_output,
-                      refresh_devices=broken_refresh, log=logs.append)
+    speaker = Speaker(short_audio, open_output, refresh_devices=broken_refresh, log=logs.append)
     speaker.speak(["Hello."])
     speaker.wait(2)
-    assert outputs and outputs[0].total_samples() > 0
     assert any("device refresh failed" in line for line in logs)
-
-
-def test_devices_are_not_refreshed_while_the_previous_reply_is_still_playing():
-    refreshes: list[int] = []
-    release = threading.Event()
-
-    class StuckOutput(FakeOutput):
-        def write(self, block):
-            release.wait(5)
-
-    speaker = Speaker(lambda text: (np.ones(SAMPLE_RATE, dtype=np.float32), SAMPLE_RATE),
-                      lambda sample_rate: StuckOutput(), refresh_devices=lambda: refreshes.append(1), log=lambda line: None)
-    speaker.speak(["Stuck."])
-    time.sleep(0.1)
-    speaker.speak(["Next."])  # the stuck reply ignores cancel for more than the 2 s join
-    release.set()
-    speaker.wait(5)
-    assert refreshes == [1]
 
 
 def test_a_microphone_chosen_by_name_is_looked_up_again_on_each_open():
