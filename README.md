@@ -127,7 +127,7 @@ It only speaks while you are looking at the agent: **an Orca window must be visi
 |---|---|
 | An agent you are viewing finishes, with an Orca window visible | Speak its reply |
 | An agent you are viewing finishes while Orca is covered, minimised or hidden | Hold it, and speak it when Orca is visible again (unless you moved on, or after 10 minutes) |
-| An agent finishes anywhere else | Nothing, and it is never replayed later |
+| An agent finishes in another workspace | Nothing yet: it plays once when you go to that workspace (within 10 minutes, unless the agent started working again) |
 | You send a prompt, or the agent on screen starts working again | Stop |
 | You pick another workspace, or switch away from Orca | Stop (and the chat you prompted no longer counts as on screen) |
 | You start talking | Stop |

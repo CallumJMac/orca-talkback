@@ -61,7 +61,7 @@ class VoiceDaemon:
         with self._lock:
             if self._verbose:
                 self._log(f"[event] focus workspace={context.get('workspaceId')} name={context.get('displayName')!r}")
-            action = self._rules.on_focus(context.get("workspaceId"))
+            action = self._rules.on_focus(context.get("workspaceId"), now=self._clock())
             if action is not None:
                 self._log(f"[focus] {context.get('displayName')!r} -> {describe_action(action)}")
             self._apply(action)
@@ -92,7 +92,7 @@ class VoiceDaemon:
                 self._unconfirmed_wakeups.pop(pane_key, None)
             action = self._rules.on_status(
                 payload.get("workspaceId"), pane_key, state, workspace_list_id=payload.get("workspaceListId"),
-                user_prompted=user_prompted,
+                user_prompted=user_prompted, now=self._clock(),
             )
             if action is not None:
                 self._log(f"[status] {pane_key} {state} -> {describe_action(action)}")
@@ -172,9 +172,11 @@ class VoiceDaemon:
             self._speak(pane_key)
 
     def _apply(self, action: Action | None) -> None:
-        if isinstance(action, Stop):
-            # You moved on (another workspace, a new prompt, the agent working again), so a held reply is stale.
+        if action is not None:
+            # You moved on (another workspace, a new prompt, the agent working again), or a newer
+            # reply is about to play, so a held reply is stale.
             self._held_reply = None
+        if isinstance(action, Stop):
             self._speaker.stop(action.reason)
         elif isinstance(action, Speak):
             if self._orca_visible_check is not None and not self._orca_visible_check():

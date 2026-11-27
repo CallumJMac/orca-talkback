@@ -195,3 +195,65 @@ def test_a_late_prompt_for_a_pane_that_is_not_working_is_ignored():
     rules.on_status("chat", "chat-pane", "done")
     assert rules.mark_prompted("chat-pane") is None
     assert rules.mark_prompted("unknown-pane") is None
+
+
+def test_a_reply_that_finished_while_you_were_away_plays_when_you_arrive():
+    rules = FocusRules()
+    rules.on_focus("evals", now=0)
+    rules.on_status("rfc", "rfc-pane", "working", now=0)
+    assert rules.on_status("rfc", "rfc-pane", "done", now=10) is None
+    assert rules.on_focus("rfc", now=16) == Speak("rfc-pane")
+
+
+def test_an_unheard_reply_plays_only_once():
+    rules = FocusRules()
+    rules.on_focus("evals", now=0)
+    rules.on_status("rfc", "rfc-pane", "working", now=0)
+    rules.on_status("rfc", "rfc-pane", "done", now=10)
+    assert rules.on_focus("rfc", now=16) == Speak("rfc-pane")
+    rules.on_focus("evals", now=20)
+    assert rules.on_focus("rfc", now=30) == Stop("focus changed")
+
+
+def test_an_unheard_reply_is_dropped_once_the_agent_works_again():
+    rules = FocusRules()
+    rules.on_focus("evals", now=0)
+    rules.on_status("rfc", "rfc-pane", "working", now=0)
+    rules.on_status("rfc", "rfc-pane", "done", now=10)
+    rules.on_status("rfc", "rfc-pane", "working", now=12)
+    assert rules.on_focus("rfc", now=16) == Stop("focus changed")
+
+
+def test_an_unheard_reply_expires_after_ten_minutes():
+    rules = FocusRules()
+    rules.on_focus("evals", now=0)
+    rules.on_status("rfc", "rfc-pane", "working", now=0)
+    rules.on_status("rfc", "rfc-pane", "done", now=10)
+    assert rules.on_focus("rfc", now=611) == Stop("focus changed")
+
+
+def test_arriving_matches_a_worktree_by_its_list_id():
+    rules = FocusRules()
+    rules.on_focus("identity:other", now=0)
+    rules.on_status("rfc", "rfc-pane", "working", workspace_list_id="identity:rfc", now=0)
+    rules.on_status("rfc", "rfc-pane", "done", workspace_list_id="identity:rfc", now=10)
+    assert rules.on_focus("identity:rfc", now=15) == Speak("rfc-pane")
+
+
+def test_a_reply_you_already_heard_is_not_replayed_on_arrival():
+    rules = FocusRules()
+    rules.on_focus("rfc", now=0)
+    rules.on_status("rfc", "rfc-pane", "working", now=0)
+    assert rules.on_status("rfc", "rfc-pane", "done", now=10) == Speak("rfc-pane")
+    rules.on_focus("evals", now=12)
+    assert rules.on_focus("rfc", now=14) == Stop("focus changed")
+
+
+def test_the_latest_unheard_reply_in_the_workspace_plays():
+    rules = FocusRules()
+    rules.on_focus("evals", now=0)
+    for pane in ("first-pane", "second-pane"):
+        rules.on_status("rfc", pane, "working", now=0)
+    rules.on_status("rfc", "first-pane", "done", now=5)
+    rules.on_status("rfc", "second-pane", "done", now=8)
+    assert rules.on_focus("rfc", now=10) == Speak("second-pane")

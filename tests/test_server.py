@@ -455,3 +455,13 @@ def test_a_held_reply_is_dropped_when_you_stop_or_mute_talkback():
     orca_visible[0] = True
     daemon.enforce_orca_visible()
     assert speaker.spoken == []
+
+
+def test_arriving_at_a_workspace_speaks_the_reply_you_missed():
+    daemon, speaker = make_daemon({"pane-a": "The RFC review is done."})
+    daemon.handle_focus(focus_payload("workspace-other"))
+    daemon.handle_status(status_payload(FOCUSED, "pane-a", "working"))
+    daemon.handle_status(status_payload(FOCUSED, "pane-a", "done"))
+    assert speaker.spoken == []
+    daemon.handle_focus(focus_payload(FOCUSED))
+    assert speaker.spoken == [["spoken: The RFC review is done."]]
