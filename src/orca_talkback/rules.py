@@ -58,6 +58,13 @@ class FocusRules:
         self._prompted_pane = None
         return Stop("focus changed")
 
+    def mark_prompted(self, pane_key: str) -> Action | None:
+        """Your prompt was reported after the agent had already started working: count it now."""
+        if self._pane_states.get(pane_key) != "working":
+            return None
+        self._prompted_pane = pane_key
+        return Stop("you sent a new prompt")
+
     def on_status(
         self,
         workspace_id: str | None,

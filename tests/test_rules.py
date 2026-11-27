@@ -179,3 +179,19 @@ def test_orca_and_claude_agent_messages_are_not_your_prompts():
     assert is_agent_message("You are working inside Orca, a multi-agent IDE. You are a dispatched worker.")
     assert not is_agent_message("Do all the strava ones we can and review them")
     assert not is_agent_message("")
+
+
+def test_a_late_confirmed_prompt_marks_a_working_chat():
+    rules = FocusRules()
+    rules.on_focus("sidebar")
+    rules.on_status("chat", "chat-pane", "done")
+    assert rules.on_status("chat", "chat-pane", "working", user_prompted=False) is None
+    assert rules.mark_prompted("chat-pane") == Stop("you sent a new prompt")
+    assert rules.on_status("chat", "chat-pane", "done") == Speak("chat-pane")
+
+
+def test_a_late_prompt_for_a_pane_that_is_not_working_is_ignored():
+    rules = FocusRules()
+    rules.on_status("chat", "chat-pane", "done")
+    assert rules.mark_prompted("chat-pane") is None
+    assert rules.mark_prompted("unknown-pane") is None

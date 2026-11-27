@@ -30,6 +30,10 @@ class VoiceDaemon:
         self._clock = clock
         # The latest prompt the Claude Code hook reported for each session: when, and whether it was yours.
         self._prompts: dict[str, tuple[float, bool]] = {}
+        # Each session's pane, and when each pane last woke up without a confirmed prompt from you,
+        # so a report that arrives after the agent started working can still count.
+        self._session_panes: dict[str, str] = {}
+        self._unconfirmed_wakeups: dict[str, float] = {}
         self._verbose = verbose
         self._orca_visible_check = orca_visible_check
         # Voice mode: which workspaces the Talkback plugin muted, and each agent session's workspace ids.
@@ -75,9 +79,16 @@ class VoiceDaemon:
                     f"[event] status pane={pane_key} state={state} session={payload.get('sessionId')} "
                     f"workspace={payload.get('workspaceId')} focused={self._rules.focused_workspace_id}"
                 )
+            if isinstance(session_id, str):
+                self._session_panes[session_id] = pane_key
+            user_prompted = self._user_prompted(session_id)
+            if state == "working" and user_prompted is False:
+                self._unconfirmed_wakeups.setdefault(pane_key, self._clock())
+            elif state != "working":
+                self._unconfirmed_wakeups.pop(pane_key, None)
             action = self._rules.on_status(
                 payload.get("workspaceId"), pane_key, state, workspace_list_id=payload.get("workspaceListId"),
-                user_prompted=self._user_prompted(session_id),
+                user_prompted=user_prompted,
             )
             if action is not None:
                 self._log(f"[status] {pane_key} {state} -> {describe_action(action)}")
@@ -94,6 +105,14 @@ class VoiceDaemon:
             self._prompts[session_id] = (self._clock(), from_you)
             if self._verbose:
                 self._log(f"[prompt] session={session_id} from {'you' if from_you else 'another agent'}")
+            pane_key = self._session_panes.get(session_id)
+            woke_at = self._unconfirmed_wakeups.get(pane_key) if pane_key else None
+            if from_you and woke_at is not None and self._clock() - woke_at <= PROMPT_MATCH_SECONDS:
+                self._unconfirmed_wakeups.pop(pane_key, None)
+                action = self._rules.mark_prompted(pane_key)
+                if action is not None:
+                    self._log(f"[prompt] {pane_key} -> {describe_action(action)} (reported after it started working)")
+                self._apply(action)
 
     def _user_prompted(self, session_id: object) -> bool | None:
         """Whether your prompt just woke this session; None when the hook never reported on it."""

@@ -363,3 +363,31 @@ def test_prompt_payload_is_validated():
         daemon.handle_prompt({"session": 5, "prompt": "hi"})
     with pytest.raises(ValueError):
         daemon.handle_prompt({"session": "s", "prompt": None})
+
+
+def test_your_prompt_reported_after_the_agent_starts_working_still_counts():
+    # Orca can mark the chat working a few seconds before Claude Code runs the prompt hook.
+    daemon, speaker, now = make_clocked_daemon({"chat": "Done."})
+    daemon.handle_focus({"context": {"workspaceId": "sidebar-workspace", "displayName": "Sidebar"}})
+    daemon.handle_status(status("chat", "done", "chat-workspace", "chat-session"))
+    daemon.handle_prompt({"session": "chat-session", "prompt": "First prompt"})
+    now[0] += 60
+    daemon.handle_status(status("chat", "working", "chat-workspace", "chat-session"))
+    now[0] += 4
+    daemon.handle_prompt({"session": "chat-session", "prompt": "Second prompt"})
+    daemon.handle_status(status("chat", "done", "chat-workspace", "chat-session"))
+    assert speaker.spoken == [["spoken: Done."]]
+    assert "you sent a new prompt" in speaker.stops
+
+
+def test_a_late_report_of_an_agent_message_does_not_mark_the_chat():
+    daemon, speaker, now = make_clocked_daemon({"chat": "Done."})
+    daemon.handle_focus({"context": {"workspaceId": "sidebar-workspace", "displayName": "Sidebar"}})
+    daemon.handle_status(status("chat", "done", "chat-workspace", "chat-session"))
+    daemon.handle_prompt({"session": "chat-session", "prompt": "First prompt"})
+    now[0] += 60
+    daemon.handle_status(status("chat", "working", "chat-workspace", "chat-session"))
+    now[0] += 4
+    daemon.handle_prompt({"session": "chat-session", "prompt": "──── From: STRUCTWORKER_1 ────"})
+    daemon.handle_status(status("chat", "done", "chat-workspace", "chat-session"))
+    assert speaker.spoken == []
