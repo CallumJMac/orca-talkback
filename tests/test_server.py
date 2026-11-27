@@ -240,13 +240,68 @@ def test_quiet_by_default():
     assert not [line for line in daemon.log_lines if line.startswith("[event]")]
 
 
-def test_reply_is_not_spoken_while_no_orca_window_is_visible():
-    daemon, speaker = make_daemon({"pane-a": "All tests pass."}, orca_visible_check=lambda: False)
+def hidden_daemon(messages):
+    orca_visible = [False]
+    now = [1000.0]
+    daemon, speaker = make_daemon(messages, orca_visible_check=lambda: orca_visible[0])
+    daemon._clock = lambda: now[0]
     daemon.handle_focus(focus_payload(FOCUSED))
-    daemon.handle_status(status_payload(FOCUSED, "pane-a", "working"))
-    daemon.handle_status(status_payload(FOCUSED, "pane-a", "done"))
+    return daemon, speaker, orca_visible, now
+
+
+def finish(daemon, pane_key):
+    daemon.handle_status(status_payload(FOCUSED, pane_key, "working"))
+    daemon.handle_status(status_payload(FOCUSED, pane_key, "done"))
+
+
+def test_a_reply_that_finishes_while_orca_is_hidden_plays_when_you_return():
+    daemon, speaker, orca_visible, _ = hidden_daemon({"pane-a": "All tests pass."})
+    finish(daemon, "pane-a")
     assert speaker.spoken == []
-    assert "[speak] skipped: no Orca window is visible" in daemon.log_lines
+    assert "[speak] holding the reply until Orca is visible" in daemon.log_lines
+    daemon.enforce_orca_visible()
+    assert speaker.spoken == []
+    orca_visible[0] = True
+    daemon.enforce_orca_visible()
+    assert speaker.spoken == [["spoken: All tests pass."]]
+    daemon.enforce_orca_visible()
+    assert len(speaker.spoken) == 1
+
+
+def test_a_held_reply_is_dropped_when_you_move_to_another_workspace():
+    daemon, speaker, orca_visible, _ = hidden_daemon({"pane-a": "All tests pass."})
+    finish(daemon, "pane-a")
+    daemon.handle_focus(focus_payload("workspace-other"))
+    orca_visible[0] = True
+    daemon.enforce_orca_visible()
+    assert speaker.spoken == []
+
+
+def test_a_held_reply_is_dropped_when_the_agent_starts_working_again():
+    daemon, speaker, orca_visible, _ = hidden_daemon({"pane-a": "All tests pass."})
+    finish(daemon, "pane-a")
+    daemon.handle_status(status_payload(FOCUSED, "pane-a", "working"))
+    orca_visible[0] = True
+    daemon.enforce_orca_visible()
+    assert speaker.spoken == []
+
+
+def test_a_held_reply_expires_after_ten_minutes():
+    daemon, speaker, orca_visible, now = hidden_daemon({"pane-a": "All tests pass."})
+    finish(daemon, "pane-a")
+    now[0] += 601
+    orca_visible[0] = True
+    daemon.enforce_orca_visible()
+    assert speaker.spoken == []
+
+
+def test_only_the_latest_held_reply_plays():
+    daemon, speaker, orca_visible, _ = hidden_daemon({"pane-a": "First.", "pane-b": "Second."})
+    finish(daemon, "pane-a")
+    finish(daemon, "pane-b")
+    orca_visible[0] = True
+    daemon.enforce_orca_visible()
+    assert speaker.spoken == [["spoken: Second."]]
 
 
 def test_playback_stops_when_orca_is_no_longer_visible():
@@ -254,7 +309,7 @@ def test_playback_stops_when_orca_is_no_longer_visible():
     daemon, speaker = make_daemon(orca_visible_check=lambda: orca_visible[0])
     speaker.is_playing = True
     daemon.enforce_orca_visible()
-    assert "you sent a new prompt" not in speaker.stops
+    assert speaker.stops == []
     orca_visible[0] = False
     daemon.enforce_orca_visible()
     assert speaker.stops == ["no Orca window is visible"]
@@ -390,4 +445,13 @@ def test_a_late_report_of_an_agent_message_does_not_mark_the_chat():
     now[0] += 4
     daemon.handle_prompt({"session": "chat-session", "prompt": "──── From: STRUCTWORKER_1 ────"})
     daemon.handle_status(status("chat", "done", "chat-workspace", "chat-session"))
+    assert speaker.spoken == []
+
+
+def test_a_held_reply_is_dropped_when_you_stop_or_mute_talkback():
+    daemon, speaker, orca_visible, _ = hidden_daemon({"pane-a": "All tests pass."})
+    finish(daemon, "pane-a")
+    daemon.handle_stop({})
+    orca_visible[0] = True
+    daemon.enforce_orca_visible()
     assert speaker.spoken == []

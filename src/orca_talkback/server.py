@@ -12,6 +12,8 @@ from orca_talkback.rules import Action, FocusRules, Speak, Stop, is_agent_messag
 
 # How long after the hook reports your prompt the agent may start working and still count as prompted.
 PROMPT_MATCH_SECONDS = 15
+# A reply that finished while Orca was hidden plays when you come back, if you come back this soon.
+HELD_REPLY_SECONDS = 600
 
 
 class VoiceDaemon:
@@ -34,6 +36,8 @@ class VoiceDaemon:
         # so a report that arrives after the agent started working can still count.
         self._session_panes: dict[str, str] = {}
         self._unconfirmed_wakeups: dict[str, float] = {}
+        # The reply that finished while Orca was hidden: its pane and when it finished.
+        self._held_reply: tuple[str, float] | None = None
         self._verbose = verbose
         self._orca_visible_check = orca_visible_check
         # Voice mode: which workspaces the Talkback plugin muted, and each agent session's workspace ids.
@@ -139,26 +143,53 @@ class VoiceDaemon:
 
     def handle_stop(self, payload: dict) -> None:
         self._log("[stop] requested")
+        with self._lock:
+            self._held_reply = None
         self._speaker.stop("requested")
 
     def enforce_orca_visible(self) -> None:
-        """Stop playback once no Orca window is visible. Called periodically while speaking."""
-        if self._orca_visible_check is not None and self._speaker.is_playing and not self._orca_visible_check():
+        """Called twice a second: stop playback once Orca is hidden, and play a held reply once it is back."""
+        if self._orca_visible_check is None:
+            return
+        with self._lock:
+            held_reply = self._held_reply
+        if held_reply is None and not self._speaker.is_playing:
+            return
+        visible = self._orca_visible_check()
+        if self._speaker.is_playing and not visible:
             self._speaker.stop("no Orca window is visible")
+        if held_reply is None or not visible:
+            return
+        with self._lock:
+            if self._held_reply != held_reply:
+                return  # replaced or dropped while the check ran
+            self._held_reply = None
+            pane_key, finished_at = held_reply
+            if self._clock() - finished_at > HELD_REPLY_SECONDS:
+                self._log(f"[speak] dropped the held reply from {pane_key}: you were away too long")
+                return
+            self._log("[speak] Orca is visible again, playing the held reply")
+            self._speak(pane_key)
 
     def _apply(self, action: Action | None) -> None:
         if isinstance(action, Stop):
+            # You moved on (another workspace, a new prompt, the agent working again), so a held reply is stale.
+            self._held_reply = None
             self._speaker.stop(action.reason)
         elif isinstance(action, Speak):
             if self._orca_visible_check is not None and not self._orca_visible_check():
-                self._log("[speak] skipped: no Orca window is visible")
+                self._held_reply = (action.pane_key, self._clock())
+                self._log("[speak] holding the reply until Orca is visible")
                 return
-            message = self._lookup_message(action.pane_key)
-            if not message.strip():
-                self._log(f"[speak] no message for {action.pane_key}")
-                return
-            self._log(f"[speak] reply from {action.pane_key}")
-            self._speaker.speak(self._logged(self._to_sentences(message)))
+            self._speak(action.pane_key)
+
+    def _speak(self, pane_key: str) -> None:
+        message = self._lookup_message(pane_key)
+        if not message.strip():
+            self._log(f"[speak] no message for {pane_key}")
+            return
+        self._log(f"[speak] reply from {pane_key}")
+        self._speaker.speak(self._logged(self._to_sentences(message)))
 
     def _logged(self, sentences: Iterable[str]) -> Iterable[str]:
         for sentence in sentences:

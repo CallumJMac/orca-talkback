@@ -126,7 +126,8 @@ It only speaks while you are looking at the agent: **an Orca window must be visi
 | Event | Action |
 |---|---|
 | An agent you are viewing finishes, with an Orca window visible | Speak its reply |
-| An agent finishes anywhere else, or while Orca is covered, minimised or hidden | Nothing, and it is never replayed later |
+| An agent you are viewing finishes while Orca is covered, minimised or hidden | Hold it, and speak it when Orca is visible again (unless you moved on, or after 10 minutes) |
+| An agent finishes anywhere else | Nothing, and it is never replayed later |
 | You send a prompt, or the agent on screen starts working again | Stop |
 | You pick another workspace, or switch away from Orca | Stop (and the chat you prompted no longer counts as on screen) |
 | You start talking | Stop |
@@ -212,7 +213,7 @@ Set `ORCA_CLI_COMMAND` if your `orca` binary lives somewhere unusual.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Nothing is ever spoken | Daemon not running, or plugin not installed | `curl -s 127.0.0.1:47823/health`; `orca plugin list` should show `talkback` running |
-| One agent never speaks | Its workspace was not on screen, or Orca was covered or hidden, when it finished | By design. Run with `--verbose` to see every event and which workspace Orca reports as focused |
+| One agent never speaks | Its workspace was not on screen when it finished, or you moved on before returning to Orca | By design. Run with `--verbose` to see every event and which workspace Orca reports as focused |
 | It stops when another window covers Orca | Replies only play while an Orca window is visible | By design; pass `--speak-when-hidden` to keep listening anyway |
 | It reads the reply word for word | The agent did not write a spoken line | Check the voice-mode hook is installed (see [Speaking or reading](#speaking-or-reading)) and that Talkback is on for the session |
 | Talking over it never stops it | The system input is a virtual device (Zoom, BlackHole), permission was denied, or the threshold is too strict | Check the `[audio] barge-in microphone:` line at startup and pass `--input-device "MacBook Pro Microphone"`; allow your terminal under System Settings, Privacy & Security, Microphone; try `--vad-threshold 0.6` |
